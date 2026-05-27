@@ -314,6 +314,13 @@ async def root():
         return HTMLResponse(idx.read_text())
     return HTMLResponse("<h1>Place index.html in ~/bloomberg/static/</h1>")
 
+@app.get("/agora", response_class=HTMLResponse)
+async def agora():
+    idx = _static / "agora" / "index.html"
+    if idx.exists():
+        return HTMLResponse(idx.read_text())
+    return HTMLResponse("<h1>agora/index.html not found</h1>")
+
 
 # ── REST endpoints ────────────────────────────────────────────────────────────
 
