@@ -16,3 +16,6 @@ quant-mind/
 my-vault/
 earnings_vrp/
 .ipynb_checkpoints/
+
+# local search output (provenance), not part of the repo
+search_results.json
