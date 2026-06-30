@@ -28,7 +28,7 @@
     "extraResources": [{
       "from": "..",
       "to": "bloomberg",
-      "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc", "!**/.git/**", "!bloomberg-app/**", "!prototyping/**"]
+      "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc", "!**/.git/**", "!delta-terminal-app/**", "!prototyping/**"]
     }]
   },
   "devDependencies": {
