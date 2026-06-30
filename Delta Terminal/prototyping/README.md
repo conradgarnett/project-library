@@ -2,7 +2,7 @@
 
 Early iterations of the terminal, kept for reference. **Not used by the current
 Delta Terminal** (which is `server.py` + `static/delta/` + the Electron app in
-`bloomberg-app/`).
+`delta-terminal-app/`).
 
 | File | What it was |
 |------|-------------|
