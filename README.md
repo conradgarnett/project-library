@@ -63,3 +63,16 @@ With only 6 features, simple operators, and a search that explicitly maximizes
 Sharpe/Calmar, results are **prone to overfitting**. The walk-forward and Monte
 Carlo components exist to push back on that — treat any in-sample Sharpe
 skeptically until it survives genuinely fresh data.
+
+## Fix log
+
+Ongoing work to make the engine methodologically honest. Each entry records a
+specific edit; commits on the `gp-trading-engine` branch.
+
+- **Fix #1 — causal feature normalization.** `FeatureEngine.build_features`
+  previously z-scored each feature using the global mean/std over the *entire*
+  series, leaking future statistics into past bars (look-ahead bias) and
+  inflating every run through the `search_until_sharpe` / `GPTradingEngine`
+  path. Replaced with an expanding-window z-score shifted by one bar, so each
+  observation is normalized using only prior data. Verified leak-free
+  (perturbing future bars no longer changes past normalized features).
