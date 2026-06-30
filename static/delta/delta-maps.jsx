@@ -1,5 +1,5 @@
-// agora-maps.jsx — Leaflet wrapper components for AGORA Terminal
-// Exposes window.AgoraMap (single component used by Aircraft, Ships, Space, Weather, Earthquakes, Parking)
+// delta-maps.jsx — Leaflet wrapper components for DELTA Terminal
+// Exposes window.DeltaMap (single component used by Aircraft, Ships, Space, Weather, Earthquakes, Parking)
 
 (function () {
   const { useEffect, useRef, useState, useMemo } = React;
@@ -13,7 +13,7 @@
            style="transform: rotate(${p.heading || 0}deg); overflow: visible;">
         <path d="M0 -10 L 4 6 L 0 3 L -4 6 Z" style="fill: ${color}; stroke: ${selected ? 'var(--text)' : 'rgba(0,0,0,0.6)'}; stroke-width: ${selected ? 1.2 : 0.6};" />
       </svg>`;
-    return L.divIcon({ html, className: 'agora-plane-icon' + (selected ? ' selected' : ''),
+    return L.divIcon({ html, className: 'delta-plane-icon' + (selected ? ' selected' : ''),
       iconSize: [size, size], iconAnchor: [size/2, size/2] });
   }
   function shipIcon(s, selected) {
@@ -26,7 +26,7 @@
         clip-path: polygon(50% 0, 100% 60%, 80% 100%, 20% 100%, 0 60%);
         box-shadow: 0 0 4px rgba(0,0,0,.7);
         border: ${selected ? '1.5px solid var(--text)' : 'none'};"></div>`;
-    return L.divIcon({ html, className: 'agora-ship-icon' + (selected ? ' selected' : ''),
+    return L.divIcon({ html, className: 'delta-ship-icon' + (selected ? ' selected' : ''),
       iconSize: [size, size], iconAnchor: [size/2, size/2] });
   }
   function satIcon(name) {
@@ -36,7 +36,7 @@
         <div style="font-size:9px; color:var(--violet); margin-top:2px; letter-spacing:.08em;
                     text-shadow: 0 0 4px var(--bg);">${name}</div>
       </div>`;
-    return L.divIcon({ html, className: 'agora-sat-icon', iconSize: [60, 28], iconAnchor: [30, 14] });
+    return L.divIcon({ html, className: 'delta-sat-icon', iconSize: [60, 28], iconAnchor: [30, 14] });
   }
   function quakeIcon(q) {
     const r = 4 + q.magnitude * 2.4;
@@ -75,16 +75,16 @@
                   padding: 2px 5px; font-family:'JetBrains Mono', monospace; font-size:10px;
                   color:${col}; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,.7);">
         <span style="font-size:11px;">P</span>
-        <span>${z.available_spaces ?? '—'}/${z.total_spaces}</span>
+        <span>${z.free ?? '—'}/${z.total ?? '—'}</span>
       </div>`;
     return L.divIcon({ html, className: '', iconSize: null, iconAnchor: [12, 8] });
   }
 
   // ---------- Main map component ----------
-  // Single-layer:  <AgoraMap kind="aircraft" items={planes} selectedId={id} onSelect={fn} />
-  // Multi-layer:   <AgoraMap layers={[{kind:'aircraft',items:planes},{kind:'ships',items:ships}]}
+  // Single-layer:  <DeltaMap kind="aircraft" items={planes} selectedId={id} onSelect={fn} />
+  // Multi-layer:   <DeltaMap layers={[{kind:'aircraft',items:planes},{kind:'ships',items:ships}]}
   //                  selected={{kind,id}} onSelect={(id,kind)=>...} />
-  function AgoraMap({ kind, items, layers, selectedId, selected, onSelect,
+  function DeltaMap({ kind, items, layers, selectedId, selected, onSelect,
                      center = [25, 10], zoom = 2, fitBounds, children }) {
     const containerRef = useRef(null);
     const mapRef = useRef(null);
@@ -171,7 +171,7 @@
         const lk = lyr.kind;
         for (const item of (lyr.items || [])) {
           const id = idOf(item, lk);
-          if (id == null) continue;
+          if (id == null || item.lat == null || item.lon == null) continue;
           const key = lk + '::' + id;
           let m = prev.get(key);
           const ll = [item.lat, item.lon];
@@ -190,7 +190,7 @@
             m._kind = lk;
             m.on('click', () => onSelect && onSelect(id, lk));
             const tipText = tooltipFor(lk, item);
-            if (tipText) m.bindTooltip(tipText, { className: 'agora-tip', direction: 'top', offset: [0, -8] });
+            if (tipText) m.bindTooltip(tipText, { className: 'delta-tip', direction: 'top', offset: [0, -8] });
             m.addTo(layer);
           }
           nextMap.set(key, m);
@@ -268,9 +268,9 @@
     if (kind === 'earthquakes')
       return `M${item.magnitude.toFixed(1)}  ${item.place}\nDepth ${item.depth_km}km · ${item.time_ago}`;
     if (kind === 'parking')
-      return `${item.location}\n${item.available_spaces}/${item.total_spaces} · ${item.status} · $${item.rate_per_hour}/hr`;
+      return `${item.name}\n${item.free ?? '—'}/${item.total} · ${item.status} · ${item.occ_pct != null ? item.occ_pct + '%' : '—'}`;
     return null;
   }
 
-  window.AgoraMap = AgoraMap;
+  window.DeltaMap = DeltaMap;
 })();

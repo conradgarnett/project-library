@@ -1,12 +1,15 @@
-"""GDELT Project — geopolitical conflict & crisis news. Free, no key."""
+"""Geopolitical conflict & crisis news via free RSS feeds.
+Sources: BBC World/Europe/Middle East, Al Jazeera, GDELT (fallback).
+No API key required.
+"""
 import asyncio, aiohttp, time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Optional
 
 @dataclass
 class ConflictState:
-    events:   list = field(default_factory=list)   # [{title, url, domain, date, country, theme}]
-    themes:   list = field(default_factory=list)   # top GDELT themes
+    events:   list = field(default_factory=list)
     updated:  float = 0.0
     error:    Optional[str] = None
 
@@ -15,41 +18,53 @@ _state = ConflictState()
 def get_conflicts():
     return _state
 
-QUERIES = [
-    ("war",       "war attack military offensive"),
-    ("crisis",    "crisis emergency humanitarian"),
-    ("protest",   "protest riot civil unrest"),
-    ("coup",      "coup government overthrown"),
-    ("sanctions", "sanctions embargo trade restriction"),
+RSS_FEEDS = [
+    # BBC regional feeds — reliable, well-structured, no rate limit
+    ("https://feeds.bbci.co.uk/news/world/rss.xml",          "BBC World",  "world"),
+    ("https://feeds.bbci.co.uk/news/world/middle_east/rss.xml","BBC ME",    "middle_east"),
+    ("https://feeds.bbci.co.uk/news/world/europe/rss.xml",    "BBC Europe", "europe"),
+    ("https://feeds.bbci.co.uk/news/world/africa/rss.xml",    "BBC Africa", "africa"),
+    ("https://www.aljazeera.com/xml/rss/all.xml",             "Al Jazeera", "world"),
 ]
 
-async def _fetch_gdelt(session, query, label):
-    url = (
-        "https://api.gdeltproject.org/api/v2/doc/doc"
-        f"?query={query.replace(' ','%20')}&mode=artlist"
-        "&maxrecords=15&format=json&timespan=24H"
-        "&sourcelang=english"
-    )
+CONFLICT_KEYWORDS = {
+    "war", "attack", "strike", "missile", "bomb", "troops", "military",
+    "conflict", "fighting", "battle", "killed", "airstrike", "invasion",
+    "ceasefire", "casualty", "casualties", "hostage", "siege", "assault",
+    "protest", "riot", "coup", "sanctions", "crisis", "refugee",
+    "humanitarian", "nuclear", "explosion", "drone", "offensive",
+}
+
+async def _fetch_rss(session: aiohttp.ClientSession, url: str, source: str, theme: str) -> list:
     try:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            if r.status == 200:
-                d = await r.json(content_type=None)
-                arts = d.get("articles") or []
-                return [
-                    {
-                        "title":   a.get("title","")[:120],
-                        "url":     a.get("url",""),
-                        "domain":  a.get("domain",""),
-                        "date":    a.get("seendate","")[:8],
-                        "country": a.get("sourcecountry",""),
-                        "theme":   label,
-                        "image":   a.get("socialimage",""),
-                    }
-                    for a in arts if a.get("title")
-                ]
+            if r.status != 200:
+                return []
+            xml_bytes = await r.read()
+        root = ET.fromstring(xml_bytes)
+        events = []
+        for item in root.findall(".//item"):
+            title = (item.findtext("title") or "").strip()
+            link  = (item.findtext("link")  or "").strip()
+            date  = (item.findtext("pubDate") or "")[:16]
+            desc  = (item.findtext("description") or "")[:200]
+            if not title:
+                continue
+            combined = (title + " " + desc).lower()
+            if not any(kw in combined for kw in CONFLICT_KEYWORDS):
+                continue
+            events.append({
+                "title":   title[:120],
+                "url":     link,
+                "domain":  source,
+                "date":    date,
+                "country": "",
+                "theme":   theme,
+                "image":   "",
+            })
+        return events
     except Exception:
-        pass
-    return []
+        return []
 
 async def run_poller(interval: int = 900):
     global _state
@@ -57,22 +72,23 @@ async def run_poller(interval: int = 900):
         try:
             all_events = []
             async with aiohttp.ClientSession(
-                headers={"User-Agent": "OpenBloombergTerminal/2.0"}
+                headers={"User-Agent": "OpenBloomberg/1.0"}
             ) as session:
-                for label, query in QUERIES:
-                    arts = await _fetch_gdelt(session, query, label)
-                    all_events.extend(arts)
-                    await asyncio.sleep(1)  # gentle on GDELT
+                tasks = [_fetch_rss(session, url, src, theme) for url, src, theme in RSS_FEEDS]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for r in results:
+                    if isinstance(r, list):
+                        all_events.extend(r)
 
-            # deduplicate by url
             seen = set()
             deduped = []
             for e in all_events:
-                if e["url"] not in seen:
-                    seen.add(e["url"])
+                key = e["url"] or e["title"]
+                if key not in seen:
+                    seen.add(key)
                     deduped.append(e)
 
-            _state.events  = sorted(deduped, key=lambda x: x["date"], reverse=True)[:60]
+            _state.events  = sorted(deduped, key=lambda x: x["date"], reverse=True)[:80]
             _state.updated = time.time()
             _state.error   = None
         except Exception as e:

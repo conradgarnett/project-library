@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>AGORA Terminal · Open Market Data</title>
+<title>DELTA Terminal · Open Market Data</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -105,7 +105,7 @@
     border-radius: 0 !important;
   }
   .leaflet-control-zoom a:hover { background: var(--surface-2) !important; }
-  .leaflet-tooltip.agora-tip {
+  .leaflet-tooltip.delta-tip {
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border-2);
@@ -116,7 +116,7 @@
     box-shadow: 0 4px 16px rgba(0,0,0,.6);
     white-space: pre;
   }
-  .leaflet-tooltip.agora-tip::before { display: none; }
+  .leaflet-tooltip.delta-tip::before { display: none; }
   .leaflet-popup-content-wrapper {
     background: var(--surface) !important;
     color: var(--text) !important;
@@ -127,18 +127,18 @@
   }
   .leaflet-popup-tip { background: var(--surface) !important; border: 1px solid var(--border-2); }
   .leaflet-popup-content { margin: 8px 10px; font-size: 11px; min-width: 200px; }
-  .agora-plane-icon, .agora-ship-icon, .agora-sat-icon {
+  .delta-plane-icon, .delta-ship-icon, .delta-sat-icon {
     display: flex; align-items: center; justify-content: center;
     color: var(--mint);
     font-weight: 700;
     text-shadow: 0 0 6px rgba(52,211,153,.5);
     pointer-events: auto;
   }
-  .agora-plane-icon.selected, .agora-ship-icon.selected {
+  .delta-plane-icon.selected, .delta-ship-icon.selected {
     color: var(--cyan);
     text-shadow: 0 0 12px var(--cyan), 0 0 4px #fff;
   }
-  .agora-sat-icon { color: var(--violet); text-shadow: 0 0 10px var(--violet); font-size: 14px; }
+  .delta-sat-icon { color: var(--violet); text-shadow: 0 0 10px var(--violet); font-size: 14px; }
   .pulse-dot {
     width: 10px; height: 10px; border-radius: 50%;
     background: var(--cyan);
@@ -259,20 +259,68 @@
 </style>
 </head>
 <body>
+<script>
+  // Apply saved theme before first paint so the boot screen inherits the right CSS variables.
+  (function() {
+    try {
+      var t = JSON.parse(localStorage.getItem('delta_tweaks') || '{}');
+      if (t.theme) document.documentElement.setAttribute('data-theme', t.theme);
+    } catch(e) {}
+  })();
+</script>
 <div id="root"></div>
+<div id="boot-screen" style="
+  position:fixed;inset:0;z-index:9999;
+  background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;
+  transition:opacity .35s ease;
+">
+  <div style="color:var(--cyan);font-size:22px;font-weight:700;letter-spacing:.18em;">◆ DELTA</div>
+  <div style="color:var(--text-2);font-size:10px;letter-spacing:.22em;margin-top:8px;">TERMINAL · INITIALIZING</div>
+  <div style="margin-top:28px;display:flex;gap:6px;">
+    <span style="width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:bd .9s .0s ease-in-out infinite alternate;"></span>
+    <span style="width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:bd .9s .2s ease-in-out infinite alternate;"></span>
+    <span style="width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:bd .9s .4s ease-in-out infinite alternate;"></span>
+  </div>
+</div>
+<style>
+  @keyframes bd { from { opacity:.2; transform:scale(.8); } to { opacity:1; transform:scale(1); } }
+</style>
+<script>
+  // Hide boot screen once React has mounted something into #root
+  (function() {
+    var b = document.getElementById('boot-screen');
+    var ob = new MutationObserver(function() {
+      var r = document.getElementById('root');
+      if (r && r.children.length > 0) {
+        b.style.opacity = '0';
+        setTimeout(function() { b.style.display = 'none'; }, 380);
+        ob.disconnect();
+      }
+    });
+    ob.observe(document.getElementById('root'), { childList: true });
+  })();
+</script>
 
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 
-<script type="text/babel" data-presets="react" src="agora-data.jsx"></script>
-<script type="text/babel" data-presets="react" src="agora-categories.jsx"></script>
-<script type="text/babel" data-presets="react" src="agora-maps.jsx"></script>
-<script type="text/babel" data-presets="react" src="agora-panels.jsx"></script>
-<script type="text/babel" data-presets="react" src="agora-placeholders.jsx"></script>
-<script type="text/babel" data-presets="react" src="tweaks-panel.jsx"></script>
-<script type="text/babel" data-presets="react" src="agora-shell.jsx"></script>
+<script type="text/babel" data-presets="react" src="delta-data.jsx?v=39"></script>
+<script type="text/babel" data-presets="react" src="delta-live.jsx?v=51"></script>
+<script type="text/babel" data-presets="react" src="delta-categories.jsx?v=51"></script>
+<script type="text/babel" data-presets="react" src="delta-maps.jsx?v=39"></script>
+<script type="text/babel" data-presets="react" src="delta-panels.jsx?v=54"></script>
+<script type="text/babel" data-presets="react" src="delta-panels2.jsx?v=41"></script>
+<script type="text/babel" data-presets="react" src="delta-panels3.jsx?v=53"></script>
+<script type="text/babel" data-presets="react" src="delta-orderflow3d.jsx?v=1"></script>
+<script type="text/babel" data-presets="react" src="delta-placeholders.jsx?v=39"></script>
+<script type="text/babel" data-presets="react" src="tweaks-panel.jsx?v=41"></script>
+<script type="text/babel" data-presets="react" src="delta-options.jsx?v=2"></script>
+<script type="text/babel" data-presets="react" src="delta-shell.jsx?v=63"></script>
 </body>
 </html>

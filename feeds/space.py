@@ -15,34 +15,25 @@ from datetime import datetime, timezone
 from typing import Optional
 
 ISS_API   = "https://api.wheretheiss.at/v1/satellites/25544"
-TIANGONG_API = "https://api.wheretheiss.at/v1/satellites/48274"
 
-CELESTRAK_GROUPS = {
-    "stations":  "https://celestrak.org/SOCRATES/query.php?CATALOG=stations&FORMAT=json",
-    "active":    "https://celestrak.org/SOCRATES/query.php?CATALOG=active&FORMAT=json",
-    "starlink":  "https://celestrak.org/SOCRATES/query.php?CATALOG=starlink&FORMAT=json",
-}
+# tle.ivanstanojevic.me — free TLE API, no key required
+TLE_API = "https://tle.ivanstanojevic.me/api/tle"
+NORAD_TIANGONG = 48274   # CSS (Tianhe core module)
+NORAD_ISS      = 25544
 
-# CelesTrak CSV catalog
-CELESTRAK_SAT_CAT = "https://celestrak.org/pub/TLE/catalog.txt"
-CELESTRAK_ACTIVE  = "https://celestrak.org/SOCRATES/query.php?CATALOG=active&FORMAT=json"
-
-# TLE sources
-CELESTRAK_TLE = {
-    "Stations":   "https://celestrak.org/SOCRATES/query.php?CATALOG=stations",
-    "Starlink":   "https://celestrak.org/SOCRATES/query.php?CATALOG=starlink",
-    "OneWeb":     "https://celestrak.org/SOCRATES/query.php?CATALOG=oneweb",
-    "Active":     "https://celestrak.org/SOCRATES/query.php?CATALOG=active",
-    "Debris":     "https://celestrak.org/SOCRATES/query.php?CATALOG=1999-025",
-}
-
-CELESTRAK_TLE_URLS = {
-    "Stations": "https://celestrak.org/SOCRATES/query.php?CATALOG=stations",
-    "Active":   "https://celestrak.org/pub/TLE/active.txt",
-    "Starlink": "https://celestrak.org/pub/TLE/starlink.txt",
-    "Visual":   "https://celestrak.org/pub/TLE/visual.txt",
-    "ISS":      "https://celestrak.org/pub/TLE/stations.txt",
-}
+# Notable NORAD IDs for the "visual" satellites list
+NOTABLE_NORAD = [
+    25544,   # ISS
+    48274,   # Tiangong CSS
+    43013,   # NOAA-20
+    33591,   # NOAA-19
+    28654,   # NOAA-18
+    25994,   # Terra
+    27424,   # Aqua
+    38771,   # Suomi NPP
+    49260,   # Landsat 9
+    39634,   # Landsat 8
+]
 
 
 @dataclass
@@ -100,6 +91,7 @@ class SpaceState:
     starlink_count: int = 0
     debris_count: int = 0
     notable: list[TLEObject] = field(default_factory=list)
+    crew: list = field(default_factory=list)
     updated: float = field(default_factory=time.time)
     error: Optional[str] = None
 
@@ -183,23 +175,151 @@ async def _fetch_tle_catalog(session: aiohttp.ClientSession, url: str) -> list[T
     return objects
 
 
+async def _fetch_tle_catalog_from_lines(name: str, line1: str, line2: str) -> Optional[TLEObject]:
+    """Parse a single TLE into a TLEObject."""
+    try:
+        import math
+        norad = line1[2:7].strip()
+        intl  = line1[9:17].strip()
+        epoch = line1[18:32].strip()
+        inc   = float(line2[8:16].strip())
+        ecc   = float("0." + line2[26:33].strip())
+        mm    = float(line2[52:63].strip())
+        period = 1440.0 / mm
+        a_km  = 331.25 * (period ** (2/3))
+        apo   = a_km * (1 + ecc) - 6371
+        per   = a_km * (1 - ecc) - 6371
+        return TLEObject(
+            name=name, norad_id=norad, intl_designator=intl,
+            epoch=epoch, period_min=period, inclination=inc,
+            apogee_km=apo, perigee_km=per, eccentricity=ecc,
+        )
+    except Exception:
+        return None
+
+
+async def _fetch_tle(session: aiohttp.ClientSession, norad_id: int) -> Optional[tuple]:
+    """Fetch TLE for a given NORAD ID from tle.ivanstanojevic.me."""
+    try:
+        async with session.get(
+            f"{TLE_API}/{norad_id}",
+            timeout=aiohttp.ClientTimeout(total=8),
+        ) as r:
+            if r.status != 200:
+                return None
+            d = await r.json()
+            return (d.get("name", ""), d.get("line1", ""), d.get("line2", ""))
+    except Exception:
+        return None
+
+
+def _tle_to_position(name: str, norad: int, line1: str, line2: str) -> Optional[SpaceStation]:
+    """Propagate a TLE to current position using sgp4."""
+    try:
+        from sgp4.api import Satrec, jday
+        import math
+        from datetime import datetime, timezone
+
+        sat = Satrec.twoline2rv(line1, line2)
+        now = datetime.now(timezone.utc)
+        jd, fr = jday(now.year, now.month, now.day, now.hour, now.minute, now.second + now.microsecond / 1e6)
+        e, r, v = sat.sgp4(jd, fr)
+        if e != 0:
+            return None
+
+        # ECI → geographic via GMST
+        days_j2000 = jd + fr - 2451545.0
+        gmst = math.radians((280.46061837 + 360.98564736629 * days_j2000) % 360)
+
+        x, y, z = r
+        lon_rad = math.atan2(y, x) - gmst
+        lon = math.degrees(lon_rad) % 360
+        if lon > 180:
+            lon -= 360
+        p = math.sqrt(x**2 + y**2)
+        lat = math.degrees(math.atan2(z, p))
+        alt = math.sqrt(x**2 + y**2 + z**2) - 6371.0
+
+        vx, vy, vz = v
+        speed = math.sqrt(vx**2 + vy**2 + vz**2)
+
+        return SpaceStation(
+            name=name,
+            norad_id=norad,
+            lat=round(lat, 6),
+            lon=round(lon, 6),
+            altitude_km=round(alt, 3),
+            velocity_kms=round(speed, 4),
+            visibility="",
+        )
+    except Exception:
+        return None
+
+
+async def _fetch_tle_count(session: aiohttp.ClientSession, search: str) -> int:
+    """Get satellite count from TLE API search."""
+    try:
+        async with session.get(
+            f"{TLE_API}/?search={search}&page-size=1",
+            timeout=aiohttp.ClientTimeout(total=8),
+        ) as r:
+            if r.status != 200:
+                return 0
+            d = await r.json()
+            return int(d.get("totalItems", 0))
+    except Exception:
+        return 0
+
+
 async def run_poller(interval: int = 60):
     global _state
     async with aiohttp.ClientSession(headers={"User-Agent": "OpenBloomberg/1.0"}) as session:
         while True:
-            iss = await _fetch_station(session, ISS_API, "ISS", 25544)
-            tg  = await _fetch_station(session, TIANGONG_API, "Tiangong", 48274)
+            # ISS real-time from wheretheiss.at
+            iss = await _fetch_station(session, ISS_API, "ISS", NORAD_ISS)
 
-            # Fetch visual satellites TLE
-            notable = await _fetch_tle_catalog(session, CELESTRAK_TLE_URLS["Visual"])
-            starlink = await _fetch_tle_catalog(session, CELESTRAK_TLE_URLS["Starlink"])
+            # Tiangong via TLE propagation
+            tg_tle = await _fetch_tle(session, NORAD_TIANGONG)
+            tg = None
+            if tg_tle:
+                tg = _tle_to_position(tg_tle[0], NORAD_TIANGONG, tg_tle[1], tg_tle[2])
+
+            # Notable satellites via TLE propagation
+            notable_tles = await asyncio.gather(
+                *[_fetch_tle(session, nid) for nid in NOTABLE_NORAD],
+                return_exceptions=True,
+            )
+            notable = []
+            for tle in notable_tles:
+                if isinstance(tle, tuple) and tle[0] and tle[1] and tle[2]:
+                    obj = await _fetch_tle_catalog_from_lines(tle[0], tle[1], tle[2])
+                    if obj:
+                        notable.append(obj)
+
+            # Starlink count from TLE API
+            starlink_count = await _fetch_tle_count(session, "STARLINK")
+            active_count   = await _fetch_tle_count(session, "")
+
+            # Crew aboard space stations (open-notify.org, updates infrequently)
+            crew = _state.crew
+            try:
+                async with session.get(
+                    "http://api.open-notify.org/astros.json",
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        crew = data.get("people", [])
+            except Exception:
+                pass
 
             _state = SpaceState(
                 iss=iss,
                 tiangong=tg,
-                active_count=len(notable),
-                starlink_count=len(starlink),
-                notable=notable[:50],
+                active_count=active_count,
+                starlink_count=starlink_count,
+                notable=notable,
+                crew=crew,
                 updated=time.time(),
             )
             await asyncio.sleep(interval)

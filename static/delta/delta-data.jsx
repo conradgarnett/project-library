@@ -1,5 +1,5 @@
-// agora-data.jsx — procedural mock feeds for AGORA Terminal
-// Exposes window.AgoraData
+// delta-data.jsx — procedural mock feeds for DELTA Terminal
+// Exposes window.DeltaData
 
 (function () {
   // Seeded RNG (mulberry32)
@@ -551,7 +551,7 @@
     });
   }
 
-  window.AgoraData = {
+  window.DeltaData = {
     snapshot, tickAircraft, tickShips, nudgeQuotes, nudgeCrypto, genSpace,
     fmt, fmtInt, fmtAbbr, round, rng, pick, between, CITIES,
   };

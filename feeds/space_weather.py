@@ -51,12 +51,21 @@ async def run_poller(interval: int = 300):
                     ) as r:
                         if r.status == 200:
                             data = await r.json()
-                            kp_data = [
-                                {"time": row[0][:16], "kp": float(row[1])}
-                                for row in data[-24*60:]  # last 24h worth
-                                if row[1] is not None
-                            ]
-                            _state.kp_24h = kp_data[-144:]  # last 2h at 1min = 120 pts, use last 144
+                            kp_data = []
+                            for row in data[-24*60:]:
+                                # API returns list-of-dicts: {time_tag, kp_index, estimated_kp, kp}
+                                if isinstance(row, dict):
+                                    t = row.get("time_tag", "")[:16]
+                                    v = row.get("estimated_kp") or row.get("kp_index")
+                                else:
+                                    t = str(row[0])[:16]
+                                    v = row[1]
+                                if v is not None:
+                                    try:
+                                        kp_data.append({"time": t, "kp": float(v)})
+                                    except (TypeError, ValueError):
+                                        pass
+                            _state.kp_24h = kp_data[-144:]
                             if kp_data:
                                 _state.kp_index = kp_data[-1]["kp"]
                                 _state.storm_level = _kp_to_storm(_state.kp_index)

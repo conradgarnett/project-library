@@ -1,71 +1,105 @@
-"""Public traffic & city webcams — no API key required.
-
-Sources:
-  - WSDOT (Washington State DOT) — free, no key, refreshes every 2 min
-  - NOAA/NWS weather station cams — public
-  - Curated city/landmark cams with direct public image URLs
+"""Public traffic & weather webcams — NOAA NDBC buoys + state DOT 511 systems.
+All URLs serve actual JPEG/PNG images. DOT sources have CORS: *.
 """
-import asyncio, aiohttp, time
+
+import asyncio
+import aiohttp
+import time
 from dataclasses import dataclass, field
 from typing import Optional
+
 
 @dataclass
 class CameraState:
     cameras: list = field(default_factory=list)
     updated: float = 0.0
-    error:   Optional[str] = None
+    error: Optional[str] = None
 
-_state = CameraState()
+
+# ── NOAA NDBC Ocean Buoy Cameras ────────────────────────────────────────────
+# Image URL: https://www.ndbc.noaa.gov/buoycam.php?station=XXXXX
+# All NDBC buoy cameras are 24/7 — ocean buoys transmit continuously
+NDBC_BUOYS = [
+    # Atlantic — East Coast
+    ("44013", "Boston Harbor Approach",  "Boston, MA",         42.346,  -70.651, "atlantic"),
+    ("44025", "New York Bight",          "New York, NY",       40.251,  -73.166, "atlantic"),
+    ("44065", "New York Harbor",         "New York, NY",       40.369,  -73.703, "atlantic"),
+    ("44008", "Nantucket SE",            "Nantucket, MA",      40.500,  -69.254, "atlantic"),
+    ("44011", "Georges Bank",            "Cape Cod, MA",       41.088,  -66.546, "atlantic"),
+    ("44014", "Virginia Beach",          "Virginia Beach, VA", 36.603,  -74.837, "atlantic"),
+    ("41025", "Diamond Shoals",          "Cape Hatteras, NC",  35.026,  -75.380, "atlantic"),
+    ("41048", "NW Atlantic",             "Atlantic Ocean",     31.890,  -69.708, "atlantic"),
+    ("41049", "SE Atlantic",             "Atlantic Ocean",     27.505,  -62.271, "atlantic"),
+    ("41047", "NE Atlantic",             "Atlantic Ocean",     27.514,  -71.495, "atlantic"),
+    ("41001", "Gulf Stream",             "Atlantic Ocean",     34.930,  -72.659, "atlantic"),
+    # Gulf of Mexico
+    ("42001", "Central Gulf",            "Gulf of Mexico",     25.896,  -89.658, "gulf"),
+    ("42036", "West Gulf",               "Gulf of Mexico",     28.500,  -84.517, "gulf"),
+    # Pacific — West Coast
+    ("46026", "San Francisco Bay Mouth", "San Francisco, CA",  37.759, -122.833, "pacific"),
+    ("46025", "Santa Monica Basin",      "Los Angeles, CA",    33.765, -119.077, "pacific"),
+    ("46053", "East Santa Barbara",      "Santa Barbara, CA",  34.248, -119.836, "pacific"),
+    ("46054", "West Santa Barbara",      "Santa Barbara, CA",  34.274, -120.468, "pacific"),
+    ("46028", "Cape San Martin",         "Big Sur, CA",        35.763, -121.893, "pacific"),
+    ("46022", "Eel River",               "Eureka, CA",         40.716, -124.540, "pacific"),
+    ("46027", "St Georges",              "Crescent City, CA",  41.840, -124.382, "pacific"),
+    ("46086", "San Clemente Basin",      "San Diego, CA",      32.504, -118.029, "pacific"),
+    ("46002", "Oregon Offshore",         "Portland, OR",       42.560, -130.523, "pacific"),
+    ("46005", "Washington Offshore",     "Seattle, WA",        46.147, -131.077, "pacific"),
+    ("46059", "Northern Pacific",        "Pacific Ocean",      38.054, -129.975, "pacific"),
+    ("46011", "Santa Maria Basin",       "Santa Maria, CA",    34.868, -120.860, "pacific"),
+    # Hawaii
+    ("51001", "Hawaii NW",               "Pacific Ocean",      23.445, -162.279, "hawaii"),
+    ("51002", "Hawaii South",            "Pacific Ocean",      17.094, -157.808, "hawaii"),
+    ("51003", "Hawaii West",             "Pacific Ocean",      19.194, -160.741, "hawaii"),
+    ("51004", "Hawaii SE",               "Pacific Ocean",      17.525, -152.382, "hawaii"),
+]
+
+
+def _ndbc_entry(station, name, city, lat, lon, category):
+    return {
+        "id": f"ndbc_{station}",
+        "name": f"Buoy {station} — {name}",
+        "city": city,
+        "category": category,
+        "lat": lat,
+        "lon": lon,
+        "url": f"https://www.ndbc.noaa.gov/buoycam.php?station={station}",
+        "proxy": True,
+    }
+
+
+STATIC_CAMERAS = [_ndbc_entry(*s) for s in NDBC_BUOYS]
+
+
+_state = CameraState(
+    cameras=[dict(c, reachable=True) for c in STATIC_CAMERAS],
+    updated=0.0,
+)
+
 
 def get_cameras():
     return _state
 
-# Curated public cameras with direct image URLs (no key, no auth)
-STATIC_CAMERAS = [
-    # WSDOT (Washington State DOT) — public JPEG snapshots
-    {"id":"wsdot_9701", "name":"I-5 NB at Seattle (S Horton St)",   "city":"Seattle, WA",    "category":"traffic", "lat":47.594, "lon":-122.324, "url":"https://images.wsdot.wa.gov/nw/009vc09701.jpg"},
-    {"id":"wsdot_8411", "name":"I-5 at Tacoma (S 56th St)",          "city":"Tacoma, WA",     "category":"traffic", "lat":47.175, "lon":-122.449, "url":"https://images.wsdot.wa.gov/sw/005vc08411.jpg"},
-    {"id":"wsdot_8103", "name":"SR-99 Tunnel North Portal",          "city":"Seattle, WA",    "category":"traffic", "lat":47.608, "lon":-122.341, "url":"https://images.wsdot.wa.gov/nw/099vc08103.jpg"},
-    {"id":"wsdot_9339", "name":"I-90 at Mercer Island",              "city":"Mercer Island, WA","category":"traffic","lat":47.578,"lon":-122.220, "url":"https://images.wsdot.wa.gov/ms/090vc09339.jpg"},
-    {"id":"wsdot_4077", "name":"US-2 at Stevens Pass Summit",        "city":"Stevens Pass, WA","category":"mountain","lat":47.744,"lon":-121.089, "url":"https://images.wsdot.wa.gov/nc/002vc04077.jpg"},
-    {"id":"wsdot_5175", "name":"US-2 at Snoqualmie Pass",            "city":"Snoqualmie Pass, WA","category":"mountain","lat":47.425,"lon":-121.411, "url":"https://images.wsdot.wa.gov/ms/090vc05175.jpg"},
-    # NOAA weather station cameras (public)
-    {"id":"noaa_hilo",  "name":"NOAA — Hilo, Hawaii",                "city":"Hilo, HI",       "category":"weather", "lat":19.72, "lon":-155.07, "url":"https://www.weather.gov/images/hfo/webcam/hilo_latest.jpg"},
-    {"id":"noaa_juneau","name":"NOAA — Juneau, Alaska",              "city":"Juneau, AK",     "category":"weather", "lat":58.30, "lon":-134.42, "url":"https://www.weather.gov/images/pajk/webcam/juneau_latest.jpg"},
-    # USGS volcano cams (HVO — public)
-    {"id":"usgs_kil1",  "name":"USGS — Kilauea Summit (HVO)",        "city":"Hawaii Volcanoes NP","category":"science","lat":19.41,"lon":-155.29, "url":"https://volcanoes.usgs.gov/vsc/captures/kilauea/2011HVO_overview.jpg"},
-    # FAA / airport approach cams (some airports publish public snapshots)
-    {"id":"pdx_appr",   "name":"PDX Airport Approach (Troutdale)",   "city":"Portland, OR",   "category":"aviation","lat":45.549,"lon":-122.401, "url":"https://weathercams.faa.gov/camera/TROUTDALE/latest.jpg"},
-    {"id":"sea_appr",   "name":"SEA Airport Approach (Renton)",      "city":"Seattle, WA",    "category":"aviation","lat":47.490,"lon":-122.218, "url":"https://weathercams.faa.gov/camera/RENTON/latest.jpg"},
-    {"id":"anc_appr",   "name":"ANC Airport Approach",               "city":"Anchorage, AK",  "category":"aviation","lat":61.174,"lon":-149.996, "url":"https://weathercams.faa.gov/camera/ANCHORAGE_INT/latest.jpg"},
-    {"id":"den_appr",   "name":"DEN Airport Approach (Watkins)",     "city":"Denver, CO",     "category":"aviation","lat":39.760,"lon":-104.572, "url":"https://weathercams.faa.gov/camera/WATKINS/latest.jpg"},
-    # COTRIP (Colorado DOT) — public, no key
-    {"id":"cotrip_i70", "name":"I-70 at Vail Pass Summit",           "city":"Vail Pass, CO",  "category":"traffic", "lat":39.543,"lon":-106.228, "url":"https://cotrip.org/cameras/I-070D/I-070D-262.00BVAI.jpg"},
-    {"id":"cotrip_i70e","name":"I-70 Eisenhower Tunnel East Portal",  "city":"Dillon, CO",     "category":"traffic", "lat":39.677,"lon":-105.906, "url":"https://cotrip.org/cameras/I-070D/I-070D-216.40ETUN.jpg"},
-]
 
-async def run_poller(interval: int = 300):
+async def run_poller(interval: int = 600):
+    """Probe each camera URL every 10 minutes and mark reachable/dead."""
     global _state
-    while True:
-        try:
-            # Verify which cameras are reachable (HEAD check)
+
+    async with aiohttp.ClientSession(headers={"User-Agent": "OpenBloomberg/1.0"}) as session:
+        while True:
             live = []
-            async with aiohttp.ClientSession() as session:
-                for cam in STATIC_CAMERAS:
-                    try:
-                        async with session.head(cam["url"], timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True) as r:
-                            cam_copy = dict(cam)
-                            cam_copy["reachable"] = (r.status == 200)
-                            live.append(cam_copy)
-                    except Exception:
-                        cam_copy = dict(cam)
-                        cam_copy["reachable"] = False
-                        live.append(cam_copy)
+            for cam in STATIC_CAMERAS:
+                try:
+                    async with session.head(
+                        cam["url"],
+                        timeout=aiohttp.ClientTimeout(total=6),
+                        allow_redirects=True,
+                    ) as r:
+                        live.append(dict(cam, reachable=(r.status == 200)))
+                except Exception:
+                    live.append(dict(cam, reachable=False))
+
             _state.cameras = live
             _state.updated = time.time()
-            _state.error   = None
-        except Exception as e:
-            _state.error = str(e)
-            if not _state.cameras:
-                _state.cameras = [dict(c, reachable=True) for c in STATIC_CAMERAS]
-        await asyncio.sleep(interval)
+            await asyncio.sleep(interval)

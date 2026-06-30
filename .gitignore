@@ -1,3 +1,4 @@
+.env
 __pycache__/
 *.pyc
 *.pyo
@@ -8,3 +9,9 @@ build/
 .venv/
 venv/
 *.spec
+
+# Separate projects / nested repos — not part of the bloomberg terminal
+quant-mind/
+my-vault/
+earnings_vrp/
+.ipynb_checkpoints/

@@ -1,10 +1,11 @@
-// agora-placeholders.jsx — procedurally-themed placeholder panels for the 50+ stub tabs.
-// Exposes window.AgoraPlaceholders[<TAB_CODE>] = Component({snap})
+// delta-placeholders.jsx — procedurally-themed placeholder panels for the 50+ stub tabs.
+// Exposes window.DeltaPlaceholders[<TAB_CODE>] = Component({snap})
 
 (function () {
   const { useMemo, useState } = React;
-  const { fmt, fmtInt, fmtAbbr, rng, between, pick } = window.AgoraData;
-  const { TAB_NAMES } = window.AgoraCats;
+  const round = (n, d = 2) => Math.round(n * Math.pow(10, d)) / Math.pow(10, d);
+  const { fmt, fmtInt, fmtAbbr, rng, between, pick } = window.DeltaData;
+  const { TAB_NAMES } = window.DeltaCats;
 
   // ───────── tiny primitives ─────────
   function Head({ title, meta, right }) {
@@ -353,33 +354,6 @@
 
   // Keep OPT alias pointing at OFL for older code paths
   ALL.OPT = ALL.OFL;
-    [
-      { label: 'PUT/CALL', value: '0.81', color: 'var(--mint)', sub: 'equity' },
-      { label: 'SKEW', value: '142.3', sub: 'cboe skew' },
-      { label: 'VIX', value: '12.84', color: 'var(--mint)', sub: '-2.10%' },
-      { label: 'VVIX', value: '88.4', sub: 'vol of vol' },
-      { label: '0DTE VOL', value: '38%', sub: 'spx' },
-    ],
-    [
-      <ListPanel key="a" title="MOST ACTIVE OPTIONS · TODAY" meta="CBOE consolidated"
-        headers={[{label:'CONTRACT'},{label:'TYPE'},{label:'STRIKE',align:'right',num:true},
-          {label:'EXP'},{label:'LAST',align:'right',num:true},{label:'VOL',align:'right',num:true},{label:'IV %',align:'right',num:true}]}
-        rows={[
-          ['SPY 25 Nov 580C', 'CALL', 580, '25 Nov', 4.18, 412350, 14.2],
-          ['SPY 25 Nov 575P', 'PUT',  575, '25 Nov', 1.42, 318240, 15.8],
-          ['QQQ 29 Nov 500C', 'CALL', 500, '29 Nov', 3.21, 282140, 18.4],
-          ['NVDA 22 Nov 145C', 'CALL', 145, '22 Nov', 2.84, 254820, 52.1],
-          ['TSLA 22 Nov 350C', 'CALL', 350, '22 Nov', 6.42, 218450, 64.3],
-          ['AAPL 22 Nov 230C', 'CALL', 230, '22 Nov', 1.18, 184220, 22.4],
-          ['IWM 29 Nov 235C', 'CALL', 235, '29 Nov', 2.42, 142180, 19.8],
-          ['META 22 Nov 590C', 'CALL', 590, '22 Nov', 4.21, 121420, 32.1],
-        ].map((r,i) => [
-          <span className="lbl">{r[0]}</span>,
-          r[1] === 'CALL' ? <span className="up">{r[1]}</span> : <span className="down">{r[1]}</span>,
-          r[2], r[3], r[4].toFixed(2), <span className="mut">{fmtInt(r[5])}</span>, r[6].toFixed(1),
-        ])} />,
-    ]
-  );
 
   ALL.COM = () => makeWrap(
     [
@@ -1698,5 +1672,5 @@
     );
   };
 
-  window.AgoraPlaceholders = ALL;
+  window.DeltaPlaceholders = ALL;
 })();

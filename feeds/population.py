@@ -18,14 +18,19 @@ def get_population():
 WB_BASE = "https://api.worldbank.org/v2"
 
 INDICATORS = {
-    "SP.POP.TOTL":   "Population",
-    "NY.GDP.PCAP.CD":"GDP per Capita (USD)",
-    "SP.DYN.LE00.IN":"Life Expectancy",
-    "SH.DYN.MORT":   "Child Mortality (per 1k)",
-    "SE.ADT.LITR.ZS":"Adult Literacy Rate %",
-    "SL.UEM.TOTL.ZS":"Unemployment %",
+    "SP.POP.TOTL":      "Population",
+    "NY.GDP.PCAP.CD":   "GDP per Capita (USD)",
+    "SP.DYN.LE00.IN":   "Life Expectancy",
+    "SH.DYN.MORT":      "Child Mortality (per 1k)",
+    "SE.ADT.LITR.ZS":   "Adult Literacy Rate %",
+    "SL.UEM.TOTL.ZS":   "Unemployment %",
     "SP.URB.TOTL.IN.ZS":"Urban Population %",
-    "EN.ATM.CO2E.PC":"CO₂ Emissions per Capita",
+    "EN.ATM.CO2E.PC":   "CO₂ Emissions per Capita",
+    # Education indicators
+    "SE.PRM.ENRR":      "Primary Enrollment %",
+    "SE.SEC.ENRR":      "Secondary Enrollment %",
+    "SE.TER.ENRR":      "Tertiary Enrollment %",
+    "SE.XPD.TOTL.GD.ZS":"Education Spend % GDP",
 }
 
 async def _fetch_indicator(session, code, name):
@@ -78,13 +83,18 @@ async def run_poller(interval: int = 86400):  # daily — WB data rarely changes
                         continue
                     def v(code): return (results.get(code,{}).get(cid,{}) or {}).get("value")
                     countries.append({
-                        "code":      cid,
-                        "country":   cname,
-                        "pop":       v(pop_code),
-                        "gdp_pc":    v(gdp_code),
-                        "life_exp":  v(life_code),
-                        "unemp":     v(unem_code),
-                        "urban_pct": v(urb_code),
+                        "code":       cid,
+                        "country":    cname,
+                        "pop":        v(pop_code),
+                        "gdp_pc":     v(gdp_code),
+                        "life_exp":   v(life_code),
+                        "unemp":      v(unem_code),
+                        "urban_pct":  v(urb_code),
+                        "literacy":   v("SE.ADT.LITR.ZS"),
+                        "enroll_pri": v("SE.PRM.ENRR"),
+                        "enroll_sec": v("SE.SEC.ENRR"),
+                        "enroll_ter": v("SE.TER.ENRR"),
+                        "edu_spend":  v("SE.XPD.TOTL.GD.ZS"),
                     })
 
                 # sort by population descending

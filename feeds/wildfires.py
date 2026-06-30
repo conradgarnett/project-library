@@ -22,43 +22,52 @@ async def run_poller(interval: int = 10800):   # 3h — FIRMS updates 3x/day
     while True:
         if FIRMS_KEY:
             try:
-                # VIIRS SNPP, global, last 1 day, CSV
-                url = (
-                    f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
-                    f"{FIRMS_KEY}/VIIRS_SNPP_NRT/world/1"
-                )
+                # Try VIIRS SNPP first (higher resolution), fall back to MODIS
+                sources = [
+                    ("VIIRS_SNPP_NRT", "bright_ti4"),
+                    ("MODIS_NRT",       "brightness"),
+                ]
+                hotspots = []
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as r:
-                        if r.status == 200:
+                    for product, bright_col in sources:
+                        if hotspots:
+                            break
+                        url = (
+                            f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
+                            f"{FIRMS_KEY}/{product}/world/1"
+                        )
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as r:
+                            if r.status != 200:
+                                continue
                             text = await r.text()
-                            hotspots = []
                             lines = text.strip().splitlines()
-                            if len(lines) > 1:
-                                headers = [h.strip() for h in lines[0].split(",")]
-                                for line in lines[1:]:
-                                    parts = line.split(",")
-                                    if len(parts) < len(headers):
+                            if len(lines) <= 1:
+                                continue   # empty — try next source
+                            headers = [h.strip() for h in lines[0].split(",")]
+                            for line in lines[1:]:
+                                parts = line.split(",")
+                                if len(parts) < len(headers):
+                                    continue
+                                row = dict(zip(headers, parts))
+                                try:
+                                    conf = row.get("confidence", "").strip()
+                                    if conf in ("l", ""):
                                         continue
-                                    row = dict(zip(headers, parts))
-                                    try:
-                                        conf = row.get("confidence","").strip()
-                                        if conf in ("l",""):
-                                            continue   # skip low-confidence
-                                        hotspots.append({
-                                            "lat":        float(row.get("latitude",0)),
-                                            "lon":        float(row.get("longitude",0)),
-                                            "brightness": float(row.get("bright_ti4",0) or 0),
-                                            "frp":        float(row.get("frp",0) or 0),
-                                            "date":       row.get("acq_date",""),
-                                            "confidence": conf,
-                                            "satellite":  row.get("satellite",""),
-                                        })
-                                    except Exception:
-                                        continue
-                            _state.hotspots = hotspots
-                            _state.count    = len(hotspots)
-                            _state.updated  = time.time()
-                            _state.error    = None
+                                    hotspots.append({
+                                        "lat":        float(row.get("latitude", 0)),
+                                        "lon":        float(row.get("longitude", 0)),
+                                        "brightness": float(row.get(bright_col, 0) or 0),
+                                        "frp":        float(row.get("frp", 0) or 0),
+                                        "date":       row.get("acq_date", ""),
+                                        "confidence": conf,
+                                        "satellite":  row.get("satellite", ""),
+                                    })
+                                except Exception:
+                                    continue
+                _state.hotspots = hotspots
+                _state.count    = len(hotspots)
+                _state.updated  = time.time()
+                _state.error    = None
             except Exception as e:
                 _state.error = str(e)
         else:

@@ -54,27 +54,30 @@ def _pct(occ, total):
     if occ is None or not total: return None
     return round(occ / total * 100, 1)
 
-# ── TfL London ────────────────────────────────────────────────────────────────
+# ── London — TfL Santander Cycle Hire (BikePoint) ────────────────────────────
 async def _fetch_tfl(session):
     lots = []
     try:
         async with session.get(
-            "https://api.tfl.gov.uk/Occupancy/CarPark",
+            "https://api.tfl.gov.uk/BikePoint",
             timeout=aiohttp.ClientTimeout(total=15)
         ) as r:
             if r.status == 200:
                 data = await r.json()
                 for p in data:
-                    bays = p.get("bays", [])
-                    total = sum(b.get("bayCount", 0) for b in bays)
-                    free  = sum(b.get("free", 0) for b in bays if not b.get("bayType","").lower().startswith("dis"))
-                    occ   = total - free if total else None
-                    coords = p.get("centrePoint", [])
-                    lat = coords[0] if len(coords) > 0 else None
-                    lon = coords[1] if len(coords) > 1 else None
+                    props = {x["key"]: x["value"] for x in p.get("additionalProperties", [])}
+                    total = int(props.get("NbDocks") or 0)
+                    bikes = int(props.get("NbBikes") or 0)
+                    free  = int(props.get("NbEmptyDocks") or 0)
+                    if not total:
+                        continue
+                    occ = total - free
+                    coords = p.get("additionalProperties", [])
+                    lat = float(p.get("lat") or 0) or None
+                    lon = float(p.get("lon") or 0) or None
                     lots.append(ParkingLot(
-                        id=p.get("id",""),
-                        name=p.get("name","")[:50],
+                        id=p.get("id", ""),
+                        name=(p.get("commonName") or "London Cycle Dock")[:50],
                         city="London",
                         country="GB",
                         total=total,
@@ -82,7 +85,7 @@ async def _fetch_tfl(session):
                         free=free,
                         occ_pct=_pct(occ, total),
                         lat=lat, lon=lon,
-                        type="garage",
+                        type="bike_dock",
                     ))
     except Exception:
         pass
@@ -149,64 +152,66 @@ async def _fetch_sf(session):
             pass
     return lots
 
-# ── Leeds UK ──────────────────────────────────────────────────────────────────
-async def _fetch_leeds(session):
+# ── Bordeaux FR — real-time car parks ────────────────────────────────────────
+async def _fetch_bordeaux(session):
     lots = []
     try:
         async with session.get(
-            "https://datamillnorth.org/api/table/wheatfields/api/v0/tables/car-park-live/rows/?$limit=30",
+            "https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/"
+            "st_park_p/records?limit=50&where=connecte=1",
             timeout=aiohttp.ClientTimeout(total=12)
         ) as r:
             if r.status == 200:
                 data = await r.json()
-                rows = data if isinstance(data, list) else data.get("rows", data.get("data", []))
-                for row in rows:
-                    total = int(row.get("capacity", row.get("spaces", 0)) or 0)
-                    free  = int(row.get("spaces_available", row.get("free", 0)) or 0)
-                    if not total: total = max(free, 1)
+                for row in data.get("results", []):
+                    total = int(row.get("total") or 0)
+                    free  = int(row.get("libres") or 0)
+                    if not total:
+                        continue
                     occ = total - free
+                    geo = row.get("geo_point_2d") or {}
                     lots.append(ParkingLot(
-                        id=str(row.get("id", row.get("car_park_id", ""))),
-                        name=(row.get("name", row.get("car_park_name", "Leeds Car Park")) or "Leeds Car Park")[:50],
-                        city="Leeds",
-                        country="GB",
+                        id=str(row.get("ident", row.get("gid", ""))),
+                        name=(row.get("nom") or "Bordeaux Parking")[:50],
+                        city="Bordeaux",
+                        country="FR",
                         total=total,
                         occupied=occ,
                         free=free,
                         occ_pct=_pct(occ, total),
-                        lat=float(row.get("latitude", 0) or 0) or None,
-                        lon=float(row.get("longitude", 0) or 0) or None,
+                        lat=geo.get("lat"),
+                        lon=geo.get("lon"),
                     ))
     except Exception:
         pass
     return lots
 
-# ── Birmingham UK ─────────────────────────────────────────────────────────────
-async def _fetch_birmingham(session):
+# ── Cologne DE — ArcGIS open data ────────────────────────────────────────────
+async def _fetch_cologne(session):
     lots = []
     try:
-        async with session.get(
-            "https://api.birmingham.gov.uk/v1/transport/parking/car-parks",
-            timeout=aiohttp.ClientTimeout(total=12)
-        ) as r:
+        url = (
+            "https://geoportal.stadt-koeln.de/arcgis/rest/services/Parkhaus/MapServer/0/query"
+            "?where=1%3D1&outFields=*&f=json&resultRecordCount=100"
+        )
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=12)) as r:
             if r.status == 200:
                 data = await r.json()
-                items = data if isinstance(data, list) else data.get("features", data.get("data", []))
-                for item in items:
-                    props = item.get("properties", item)
-                    total = int(props.get("totalSpaces", props.get("capacity", 0)) or 0)
-                    free  = int(props.get("availableSpaces", props.get("free", 0)) or 0)
-                    if not total: continue
+                for feat in data.get("features", []):
+                    a = feat.get("attributes", {})
+                    total = int(a.get("KAPAZITAET") or a.get("Kapazitaet") or 0)
+                    free  = int(a.get("FREI") or a.get("Frei") or a.get("FREIE_PLAETZE") or 0)
+                    if not total:
+                        continue
                     occ = total - free
-                    geom = item.get("geometry", {})
-                    coords = geom.get("coordinates", []) if geom else []
-                    lat = coords[1] if len(coords) > 1 else None
-                    lon = coords[0] if len(coords) > 0 else None
+                    geo = feat.get("geometry", {}) or {}
+                    lat = float(geo.get("y") or 0) or None
+                    lon = float(geo.get("x") or 0) or None
                     lots.append(ParkingLot(
-                        id=str(props.get("id", props.get("carparkId", ""))),
-                        name=(props.get("name", props.get("carparkName", "Birmingham Car Park")) or "Birmingham Car Park")[:50],
-                        city="Birmingham",
-                        country="GB",
+                        id=str(a.get("OBJECTID", a.get("FID", ""))),
+                        name=(a.get("NAME") or a.get("BEZEICHNUNG") or "Köln Parkhaus")[:50],
+                        city="Cologne",
+                        country="DE",
                         total=total,
                         occupied=occ,
                         free=free,
@@ -217,95 +222,37 @@ async def _fetch_birmingham(session):
         pass
     return lots
 
-# ── Cologne / Köln DE ─────────────────────────────────────────────────────────
-async def _fetch_cologne(session):
+# ── Paris FR — Vélib' Métropole bike share ────────────────────────────────────
+async def _fetch_paris(session):
     lots = []
     try:
         async with session.get(
-            "https://offenedaten-koeln.de/api/3/action/datastore_search"
-            "?resource_id=f5e4fdca-6b41-4a2d-855b-8f6fac24f13b&limit=50",
+            "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/"
+            "velib-disponibilite-en-temps-reel/records?limit=100",
             timeout=aiohttp.ClientTimeout(total=12)
         ) as r:
             if r.status == 200:
                 data = await r.json()
-                records = data.get("result", {}).get("records", [])
-                for row in records:
-                    total = int(row.get("KAPAZITAET", row.get("Kapazitaet", 0)) or 0)
-                    free  = int(row.get("FREI", row.get("Frei", 0)) or 0)
-                    if not total: continue
+                for row in data.get("results", []):
+                    total = int(row.get("capacity") or 0)
+                    free  = int(row.get("numdocksavailable") or 0)
+                    bikes = int(row.get("numbikesavailable") or 0)
+                    if not total or row.get("is_installed") != "OUI":
+                        continue
                     occ = total - free
+                    geo = row.get("coordonnees_geo") or {}
                     lots.append(ParkingLot(
-                        id=str(row.get("_id", row.get("ID", ""))),
-                        name=(row.get("NAME", row.get("Parkplatz", "Köln Parkhaus")) or "Köln Parkhaus")[:50],
-                        city="Cologne",
-                        country="DE",
+                        id=str(row.get("stationcode", "")),
+                        name=(row.get("name") or "Paris Vélib'")[:50],
+                        city="Paris",
+                        country="FR",
                         total=total,
                         occupied=occ,
                         free=free,
                         occ_pct=_pct(occ, total),
-                        lat=float(row.get("LAT", 0) or 0) or None,
-                        lon=float(row.get("LON", 0) or 0) or None,
-                    ))
-    except Exception:
-        pass
-    return lots
-
-# ── Newcastle UK ──────────────────────────────────────────────────────────────
-async def _fetch_newcastle(session):
-    lots = []
-    try:
-        async with session.get(
-            "https://api.newcastle.gov.uk/api/v1/parking",
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as r:
-            if r.status == 200:
-                data = await r.json()
-                items = data if isinstance(data, list) else data.get("data", [])
-                for row in items:
-                    total = int(row.get("capacity", row.get("spaces", 0)) or 0)
-                    free  = int(row.get("available", row.get("free", 0)) or 0)
-                    if not total: continue
-                    lots.append(ParkingLot(
-                        id=str(row.get("id", "")),
-                        name=(row.get("name", "Newcastle Car Park") or "Newcastle Car Park")[:50],
-                        city="Newcastle",
-                        country="GB",
-                        total=total,
-                        occupied=total - free,
-                        free=free,
-                        occ_pct=_pct(total - free, total),
-                        lat=float(row.get("lat", 0) or 0) or None,
-                        lon=float(row.get("lng", row.get("lon", 0)) or 0) or None,
-                    ))
-    except Exception:
-        pass
-    return lots
-
-# ── Chicago (locations only — no live occupancy but useful reference) ──────────
-async def _fetch_chicago(session):
-    lots = []
-    try:
-        async with session.get(
-            "https://data.cityofchicago.org/resource/t4tf-f5xu.json?$limit=60",
-            timeout=aiohttp.ClientTimeout(total=12)
-        ) as r:
-            if r.status == 200:
-                data = await r.json()
-                for row in data:
-                    total = int(row.get("total_spaces", row.get("spaces", 0)) or 0)
-                    if not total: continue
-                    lots.append(ParkingLot(
-                        id=str(row.get("systemcodeid", row.get("objectid", ""))),
-                        name=(row.get("facilityname", row.get("address", "Chicago Garage")) or "Chicago Garage")[:50],
-                        city="Chicago",
-                        country="US",
-                        total=total,
-                        occupied=None,
-                        free=None,
-                        occ_pct=None,
-                        lat=float(row.get("latitude", 0) or 0) or None,
-                        lon=float(row.get("longitude", 0) or 0) or None,
-                        type="garage",
+                        lat=geo.get("lat"),
+                        lon=geo.get("lon"),
+                        type="bike_dock",
                     ))
     except Exception:
         pass
@@ -319,13 +266,11 @@ async def run_poller(interval: int = 120):
                 headers={"User-Agent": "OpenBloombergTerminal/2.0"}
             ) as session:
                 results = await asyncio.gather(
-                    _fetch_tfl(session),
-                    _fetch_sf(session),
-                    _fetch_leeds(session),
-                    _fetch_birmingham(session),
-                    _fetch_cologne(session),
-                    _fetch_newcastle(session),
-                    _fetch_chicago(session),
+                    _fetch_tfl(session),       # London cycle docks
+                    _fetch_sf(session),        # San Francisco
+                    _fetch_bordeaux(session),  # Bordeaux real-time car parks
+                    _fetch_cologne(session),   # Cologne car parks
+                    _fetch_paris(session),     # Paris Vélib' bike share
                     return_exceptions=True,
                 )
                 all_lots = []

@@ -42,7 +42,7 @@ def _scan_ticker(symbol: str) -> list:
     try:
         import yfinance as yf
         t = yf.Ticker(symbol)
-        exps = t.options[:4]   # next 4 expirations
+        exps = t.options[:2]   # next 2 expirations — faster, most volume is near-term
         for exp in exps:
             try:
                 chain = t.option_chain(exp)
@@ -85,33 +85,34 @@ def _scan_ticker(symbol: str) -> list:
         pass
     return rows
 
-async def run_poller(interval: int = 900):  # 15 min — options data is slow to change
+async def run_poller(interval: int = 900):
     global _state
+    from feeds.yf_throttle import run as yf_run
     while True:
         try:
+            # Fetch all tickers sequentially through the global yfinance throttle
+            results = []
+            for sym in WATCHLIST:
+                rows = await yf_run(_scan_ticker, sym)
+                results.append(rows)
+
             all_rows = []
             ticker_summary = {}
-
-            loop = asyncio.get_event_loop()
-            for sym in WATCHLIST:
-                rows = await loop.run_in_executor(None, _scan_ticker, sym)
+            for sym, rows in zip(WATCHLIST, results):
                 all_rows.extend(rows)
                 if rows:
                     calls = [r for r in rows if r["type"] == "C"]
                     puts  = [r for r in rows if r["type"] == "P"]
                     ticker_summary[sym] = {
-                        "ticker":    sym,
-                        "calls":     len(calls),
-                        "puts":      len(puts),
-                        "put_call":  round(len(puts) / len(calls), 2) if calls else 999,
-                        "max_vol":   max((r["volume"] for r in rows), default=0),
-                        "top_prem":  max((r["premium_k"] for r in rows), default=0),
+                        "ticker":   sym,
+                        "calls":    len(calls),
+                        "puts":     len(puts),
+                        "put_call": round(len(puts) / len(calls), 2) if calls else 999,
+                        "max_vol":  max((r["volume"] for r in rows), default=0),
+                        "top_prem": max((r["premium_k"] for r in rows), default=0),
                     }
-                await asyncio.sleep(0.3)  # gentle rate limiting
 
-            # sort by total premium descending — biggest money moves first
             all_rows.sort(key=lambda r: r["premium_k"], reverse=True)
-
             _state.unusual  = all_rows[:150]
             _state.summary  = sorted(ticker_summary.values(), key=lambda x: x["max_vol"], reverse=True)
             _state.updated  = time.time()

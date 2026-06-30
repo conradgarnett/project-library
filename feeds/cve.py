@@ -35,20 +35,23 @@ async def run_poller(interval: int = 900):
     while True:
         try:
             async with aiohttp.ClientSession() as session:
-                # NVD CVEs (most recent 30, no key needed)
+                # NVD CVEs — date filter returns 404; use pagination to get most recent
                 try:
-                    from datetime import datetime, timedelta, timezone
-                    since = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S.000")
+                    NVD = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+                    NVD_HDR = {"User-Agent": "OpenBloombergTerminal/2.0"}
+                    # Get total count first
+                    async with session.get(f"{NVD}?resultsPerPage=1",
+                        timeout=aiohttp.ClientTimeout(total=10), headers=NVD_HDR) as r0:
+                        total = (await r0.json()).get("totalResults", 0) if r0.status == 200 else 0
+                    start = max(0, total - 30)
                     async with session.get(
-                        f"https://services.nvd.nist.gov/rest/json/cves/2.0"
-                        f"?pubStartDate={since}&resultsPerPage=30",
-                        timeout=aiohttp.ClientTimeout(total=20),
-                        headers={"User-Agent": "OpenBloombergTerminal/2.0"}
+                        f"{NVD}?startIndex={start}&resultsPerPage=30",
+                        timeout=aiohttp.ClientTimeout(total=20), headers=NVD_HDR
                     ) as r:
                         if r.status == 200:
                             d = await r.json()
                             cves = []
-                            for item in d.get("vulnerabilities", []):
+                            for item in reversed(d.get("vulnerabilities", [])):
                                 cve = item.get("cve", {})
                                 cve_id = cve.get("id", "")
                                 desc = next(
