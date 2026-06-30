@@ -26,9 +26,9 @@
     },
     "files": ["main.js", "package.json", "icon.png", "icon.icns", "node_modules/**/*"],
     "extraResources": [{
-      "from": "../bloomberg",
+      "from": "..",
       "to": "bloomberg",
-      "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc", "!**/.git/**"]
+      "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc", "!**/.git/**", "!bloomberg-app/**", "!prototyping/**"]
     }]
   },
   "devDependencies": {
