@@ -24,6 +24,22 @@ from optlib.compare import (
     convergence_table,
 )
 from optlib.strategy import bull_call_spread, iron_condor, straddle
+from optlib.greeks_advanced import advanced_greeks
+from optlib.exotic import (
+    asian_price_mc,
+    barrier_price,
+    digital_price,
+    geometric_asian_price,
+    lookback_price_mc,
+)
+from optlib.models import heston_price_mc, merton_jump_price
+from optlib.black_scholes import implied_volatility
+from optlib.implied import (
+    delta_hedge_pnl,
+    implied_prob_itm,
+    realized_volatility,
+    variance_risk_premium,
+)
 from optlib import visualize as viz
 
 pd.set_option("display.width", 120)
@@ -83,7 +99,48 @@ def main():
               f"V(/1%)={gk['vega']/100:.4f}  Θ(/day)={gk['theta']/365:.4f}  "
               f"ρ(/1%)={gk['rho']/100:.4f}")
 
-    section("7. Generating figures -> figures/")
+    section("7. Higher-order (advanced) Greeks — call")
+    ag = advanced_greeks(S, K, T, r, sigma, q, "call")
+    for name, val in ag.as_dict().items():
+        print(f"    {name:12s} {val:12.5f}")
+
+    section("8. Exotic options")
+    print(f"    digital call (cash-or-nothing $1)   {digital_price(S, K, T, r, sigma, q, 'call'):.4f}")
+    print(f"    geometric Asian call (closed form)  {geometric_asian_price(S, K, T, r, sigma, q, 'call'):.4f}")
+    a_mc, a_se = asian_price_mc(S, K, T, r, sigma, q, 'call', 'arithmetic', n_paths=200_000)
+    print(f"    arithmetic Asian call (MC+control)  {a_mc:.4f} ± {a_se:.4f}")
+    dao = barrier_price(S, K, 90, T, r, sigma, q, 'call', 'down-out')
+    print(f"    down-and-out call (H=90, barrier)   {dao:.4f}")
+    lb, lse = lookback_price_mc(S, T, r, sigma, q, 'call', n_paths=200_000)
+    print(f"    floating-strike lookback call (MC)  {lb:.4f} ± {lse:.4f}")
+
+    section("9. Alternative models & the volatility smile they generate")
+    for Kx in (85, 100, 115):
+        pm = merton_jump_price(S, Kx, T, r, 0.20, q, 'call', lam=1.0, muJ=-0.12, sigJ=0.15)
+        ivm = implied_volatility(pm, S, Kx, T, r, q, 'call')
+        ph, _ = heston_price_mc(S, Kx, T, r, q, 'call', v0=0.04, kappa=2.0, theta=0.04,
+                                xi=0.5, rho=-0.7, n_paths=150_000, n_steps=150)
+        ivh = implied_volatility(ph, S, Kx, T, r, q, 'call')
+        print(f"    K={Kx}: Merton IV={ivm:.4f}   Heston IV={ivh:.4f}   (flat BS = 0.2000)")
+
+    section("10. Implied vs realized — fact-checking the model")
+    iv = 0.20
+    print(f"    implied ITM prob N(d2) (risk-neutral): "
+          f"{implied_prob_itm(S, K, T, r, iv, q, 'call'):.4f}")
+    print(f"    real-world ITM prob (mu=10%):          "
+          f"{implied_prob_itm(S, K, T, r, iv, q, 'call', 'real-world', mu=0.10):.4f}"
+          f"   (gap = risk premium)")
+    vrp = variance_risk_premium(implied_vol=0.20, realized_vol=0.16)
+    print(f"    variance risk premium: IV=20% RV=16% -> "
+          f"{vrp.vrp_vol_points*100:+.1f} vol pts (options were rich)")
+    print("    delta-hedged LONG call P&L vs realized vol (implied=20%):")
+    for rv in (0.10, 0.20, 0.30):
+        res = delta_hedge_pnl(S, K, T, r, 0.20, rv, q, 'call', 'long',
+                              n_steps=126, n_paths=40_000)
+        print(f"       realized={rv:.0%}: P&L={res['mean_pnl']:+.4f} "
+              f"(predicted {res['predicted_pnl']:+.4f})")
+
+    section("11. Generating figures -> figures/")
     figures = {
         "greeks_vs_spot.png": lambda p: viz.plot_greeks_vs_spot(K, T, r, sigma, q, "call", save_path=p),
         "vol_smile.png": lambda p: viz.plot_vol_smile(S=S, save_path=p),
@@ -93,6 +150,9 @@ def main():
         "payoff_diagram.png": lambda p: viz.plot_payoff_diagram(S, K, T, r, sigma, q, "call", save_path=p),
         "sample_paths.png": lambda p: viz.plot_sample_paths(S, K, T, r, sigma, q, "call", save_path=p),
         "strategy_iron_condor.png": lambda p: viz.plot_strategy_pnl(iron_condor(85, 95, 110, 120), S, T, r, sigma, q, save_path=p),
+        "risk_neutral_density.png": lambda p: viz.plot_risk_neutral_density(S, K, T, r, sigma, q, save_path=p),
+        "iv_vs_realized_hedge.png": lambda p: viz.plot_iv_vs_realized_hedge(S, K, T, r, 0.28, q, "call", save_path=p),
+        "model_smiles.png": lambda p: viz.plot_model_smiles(S=S, T=1.0, r=r, save_path=p),
     }
     for name, fn in figures.items():
         path = os.path.join(FIG_DIR, name)

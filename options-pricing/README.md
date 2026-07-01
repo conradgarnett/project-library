@@ -15,11 +15,16 @@ services, fully reproducible.
 | Module | Purpose |
 | --- | --- |
 | `optlib/black_scholes.py` | BSM price, Delta/Gamma/Vega/Theta/Rho, implied vol (Brent), put-call parity check |
+| `optlib/greeks_advanced.py` | Higher-order Greeks: vanna, charm, vomma, veta, speed, zomma, color, ultima, dual-delta, dual-gamma (all FD-validated) |
 | `optlib/monte_carlo.py` | Risk-neutral GBM pricer with antithetic variates + control variate, standard errors / 95% CI, finite-difference Greeks (common random numbers), path simulation |
 | `optlib/binomial.py` | Cox-Ross-Rubinstein lattice pricer — European **and American** options (early exercise), plus tree Greeks |
+| `optlib/finite_difference.py` | Crank-Nicolson PDE solver — European & American, second-order accurate, grid delta/gamma |
+| `optlib/exotic.py` | Digital, geometric/arithmetic Asian, barrier (Reiner-Rubinstein + MC), lookback |
+| `optlib/models.py` | Merton jump-diffusion (closed form + MC) and Heston stochastic vol (MC) — both generate the smile |
+| `optlib/implied.py` | Implied vs realized: realized-vol estimators, implied ITM probability, Breeden-Litzenberger density, variance risk premium, delta-hedge P&L |
 | `optlib/strategy.py` | Multi-leg strategy analyzer: net premium, aggregate Greeks, payoff/P&L, breakevens, max profit/loss + ready-made spreads/straddle/strangle/condor/covered-call/protective-put |
-| `optlib/compare.py` | Three-way (BS / MC / binomial) comparison tables for price, Greeks, and convergence |
-| `optlib/visualize.py` | Greek curves, vol smile, vol surface, MC convergence, payoff/P&L, sample paths, strategy P&L |
+| `optlib/compare.py` | Four-way (BS / MC / binomial / PDE) comparison tables for price, Greeks, and convergence |
+| `optlib/visualize.py` | Greek curves, vol smile & surface, MC/model convergence, payoff/P&L, sample paths, strategy P&L, implied density, hedged-P&L-vs-realized, model smiles |
 | `cli.py` | Command-line calculator |
 | `demo.py` | End-to-end report + figure generation |
 | `tests/test_pricing.py` | Correctness tests (reference prices, parity, FD Greek checks, IV round-trip, MC-in-CI) |
@@ -33,7 +38,7 @@ cd options-pricing
 pip install -r requirements.txt      # numpy, scipy, matplotlib, pandas
 
 python demo.py                       # prints everything + writes figures/
-python -m pytest -q                  # or: python tests/test_pricing.py
+python tests/run_all.py              # 35 tests, no pytest needed (or: python -m pytest -q)
 ```
 
 ### Command-line calculator
@@ -158,6 +163,47 @@ the MC 95% CI as paths grow — see `figures/mc_convergence.png`.
 
 ---
 
+## Implied vs realized — "are there implied Greeks?"
+
+Implied volatility is the *only* BS input inverted from the market price; the
+Greeks are then computed **at** that implied vol, so desk Greeks already are
+"implied Greeks." What you can additionally back out of prices, and check
+against what actually happens:
+
+- **Implied ITM probability** `N(d2) = -e^{rT}·dual_delta` — the risk-neutral
+  `Q(S_T > K)`. Compare to the real-world probability (with physical drift μ):
+  the gap is the risk premium / change of measure.
+- **Implied risk-neutral density** `f(K) = e^{rT}·∂²C/∂K²`
+  (Breeden-Litzenberger) — the whole distribution the market prices in.
+- **Variance risk premium** — implied vol vs realized vol over the option's
+  life (implied is systematically richer).
+- **Gamma-theta identity** — a delta-hedged long option earns
+  `≈ ½(σ_realized² − σ_implied²)·∫ΓS²dt`. `delta_hedge_pnl` simulates this and
+  it matches the closed-form prediction to Monte-Carlo error; the P&L crosses
+  zero exactly at `realized == implied` (see `figures/iv_vs_realized_hedge.png`).
+
+```python
+from optlib.implied import implied_prob_itm, variance_risk_premium, delta_hedge_pnl
+implied_prob_itm(100, 105, 0.5, 0.04, 0.25, kind="call")            # risk-neutral N(d2)
+variance_risk_premium(implied_vol=0.20, realized_vol=0.16)          # options were rich
+delta_hedge_pnl(100, 100, 0.5, 0.03, 0.20, 0.30, kind="call")       # realized>implied => +P&L
+```
+
+## Exotics & alternative models
+
+```python
+from optlib.exotic import barrier_price, geometric_asian_price
+from optlib.models import merton_jump_price, heston_price_mc
+
+barrier_price(100, 100, 90, 1, 0.05, 0.2, kind="call", barrier_type="down-out")
+geometric_asian_price(100, 100, 1, 0.05, 0.2, kind="call")          # closed form
+merton_jump_price(100, 100, 1, 0.05, 0.2, lam=1, muJ=-0.1, sigJ=0.15)  # + skew
+heston_price_mc(100, 100, 1, 0.05, v0=0.04, theta=0.04, xi=0.5, rho=-0.7)
+```
+
+Barrier in-out parity (`knock_in + knock_out == vanilla`) holds to machine
+precision, and every closed form is cross-checked against Monte-Carlo.
+
 ## Figures (generated into `figures/`)
 
 - `greeks_vs_spot.png` — price + all five Greeks vs spot
@@ -168,6 +214,9 @@ the MC 95% CI as paths grow — see `figures/mc_convergence.png`.
 - `payoff_diagram.png` — payoff, P&L, and current value with breakeven
 - `sample_paths.png` — simulated GBM paths + terminal distribution
 - `strategy_iron_condor.png` — multi-leg strategy P&L with breakevens & Greeks
+- `risk_neutral_density.png` — implied density (Breeden-Litzenberger) vs exact lognormal
+- `iv_vs_realized_hedge.png` — delta-hedged P&L vs realized vol (gamma-theta fact-check)
+- `model_smiles.png` — implied-vol smiles generated by Merton & Heston
 
 ---
 
@@ -186,5 +235,11 @@ the MC 95% CI as paths grow — see `figures/mc_convergence.png`.
   American put on a non-dividend stock
 - strategy Greeks, breakevens, and capped payoffs (bull spread, straddle,
   covered call)
+- every higher-order Greek vs an independent finite difference
+- Crank-Nicolson PDE converges to BS; American matches the tree
+- exotic closed forms vs Monte-Carlo; barrier in-out parity
+- Merton/Heston reduce to BS in the right limits and generate a skew
+- implied-vs-realized: density recovery, `N(d2)` = `-e^{rT}·dual_delta`, and the
+  delta-hedge P&L tracking the gamma-theta prediction
 
-All 12 tests pass.
+All 35 tests pass (`python tests/run_all.py`).

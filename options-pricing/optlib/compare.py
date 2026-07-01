@@ -15,6 +15,7 @@ import pandas as pd
 
 from .binomial import binomial_price
 from .black_scholes import bs_greeks, bs_price
+from .finite_difference import crank_nicolson
 from .monte_carlo import MonteCarloPricer
 
 
@@ -66,6 +67,8 @@ def compare_all_models(
     mc = MonteCarloPricer(n_paths=n_paths, seed=seed).price(S, K, T, r, sigma, q, kind)
     euro = binomial_price(S, K, T, r, sigma, q, kind, "european", n_steps)
     amer = binomial_price(S, K, T, r, sigma, q, kind, "american", n_steps)
+    cn = crank_nicolson(S, K, T, r, sigma, q, kind, "european",
+                        n_space=500, n_time=500).price
     return pd.DataFrame(
         [
             {"model": "Black-Scholes (closed form)", "price": bs, "note": "analytic truth"},
@@ -73,6 +76,8 @@ def compare_all_models(
              "note": f"±{mc.std_error:.4f} SE (95% CI {mc.ci_low:.4f}-{mc.ci_high:.4f})"},
             {"model": "Binomial tree, European", "price": euro,
              "note": f"{n_steps} steps; err vs BS = {abs(euro - bs):.4f}"},
+            {"model": "Crank-Nicolson PDE, European", "price": cn,
+             "note": f"err vs BS = {abs(cn - bs):.4f}"},
             {"model": "Binomial tree, American", "price": amer,
              "note": f"early-exercise premium = {amer - euro:.4f}"},
         ]
