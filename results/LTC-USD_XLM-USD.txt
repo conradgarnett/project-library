@@ -1,0 +1,34 @@
+==================================================================
+ LTC-USD  vs  XLM-USD
+==================================================================
+
+COINTEGRATION (screen)
+  correlation      0.9182
+  Engle-Granger    -3.0198  (cointegrated=False)
+  hedge ratio beta 0.3537
+  half-life        9.2 days
+
+IN-SAMPLE BACKTEST (optimistic — fits and trades same data)
+  Sharpe 0.29 | ann.return 4.14% | maxDD -24.66% | trades 48
+
+WALK-FORWARD (honest — train 180d / test 45d rolling)
+  Walk-forward: 12 folds, 540 OOS periods
+    in-sample Sharpe (optimistic) :   1.18
+    OUT-OF-SAMPLE Sharpe (honest)  :   1.53
+    overfitting gap                :  -0.35
+    OOS ann.return 51.93% | maxDD -13.92% | hit 56.2%
+
+PER-FOLD OUT-OF-SAMPLE
+test_start   test_end    beta  train_sharpe  test_sharpe  n_trades
+2024-12-29 2025-02-11 127.212         2.747        2.672         3
+2025-02-12 2025-03-28 132.677         3.797        2.776         2
+2025-03-29 2025-05-12 128.187         2.324        0.000         0
+2025-05-13 2025-06-26 130.107         2.527        0.000         0
+2025-06-27 2025-08-10 180.041         1.151        4.770         2
+2025-08-11 2025-09-24 156.091         2.174        0.000         0
+2025-09-25 2025-11-08 173.448         0.971        2.794         3
+2025-11-09 2025-12-23 157.331         1.779        3.499         2
+2025-12-24 2026-02-06 162.198         2.405       -1.344         1
+2026-02-07 2026-03-23 228.552         2.251        0.700         1
+2026-03-24 2026-05-07 266.726         1.558        0.000         0
+2026-05-08 2026-06-21 366.229         3.300        0.569         3

@@ -47,7 +47,7 @@ data.price_panel   →   pairs.screen_pairs   →   backtest.backtest_pair   →
 | `cryptostat/backtest.py` | Vectorized, look-ahead-free pairs backtester with transaction costs |
 | `cryptostat/walkforward.py` | **Out-of-sample validation**: re-fit on a rolling train window, trade only the next unseen window; reports the in-sample-vs-OOS overfitting gap |
 | `cryptostat/metrics.py` | Sharpe, Sortino, Calmar, max drawdown, hit rate, equity curve |
-| `scripts/` | `01_fetch_universe` → `02_screen_pairs` → `03_backtest_pair` → `04_walk_forward` |
+| `scripts/` | `01_fetch_universe` → `02_screen_pairs` → `03_backtest_pair` → `04_walk_forward`; `05_batch_results` runs the top-N pairs and writes a `results/` folder |
 | `tests/` | Cointegration + backtest correctness on synthetic series with known truth |
 
 ## Quick start
