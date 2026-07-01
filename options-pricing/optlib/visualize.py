@@ -23,6 +23,7 @@ matplotlib.use("Agg")  # headless backend; safe everywhere
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .binomial import binomial_price
 from .black_scholes import bs_greeks, bs_price
 from .compare import convergence_table
 from .monte_carlo import MonteCarloPricer
@@ -158,6 +159,49 @@ def plot_mc_convergence(
 
 
 # --------------------------------------------------------------------------- #
+def plot_model_convergence(
+    S, K, T, r, sigma, q=0.0, kind="call",
+    mc_counts=(1_000, 5_000, 25_000, 100_000, 500_000, 2_000_000),
+    tree_steps=(5, 10, 25, 50, 100, 250, 500, 1000, 2000),
+    seed=42, save_path=None,
+):
+    """
+    Side-by-side view of *both* numerical methods homing in on the analytic
+    Black-Scholes price: Monte-Carlo (± 95% CI) vs the binomial tree.
+    """
+    truth = float(bs_price(S, K, T, r, sigma, q, kind))
+
+    mc_px, mc_se = [], []
+    for n in mc_counts:
+        res = MonteCarloPricer(n_paths=n, seed=seed).price(S, K, T, r, sigma, q, kind)
+        mc_px.append(res.price)
+        mc_se.append(res.std_error)
+    tree_px = [binomial_price(S, K, T, r, sigma, q, kind, "european", n) for n in tree_steps]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    ax1.errorbar(mc_counts, mc_px, yerr=1.96 * np.array(mc_se), fmt="o-",
+                 capsize=4, color="#2ca02c", label="Monte-Carlo ± 95% CI")
+    ax1.axhline(truth, color="#d62728", ls="--", lw=2, label=f"BS = {truth:.4f}")
+    ax1.set_xscale("log")
+    ax1.set_title("Monte-Carlo convergence")
+    ax1.set_xlabel("paths (log)")
+    ax1.set_ylabel("price")
+    ax1.grid(alpha=0.3, which="both")
+    ax1.legend()
+
+    ax2.plot(tree_steps, tree_px, "o-", color="#1f77b4", label="Binomial tree")
+    ax2.axhline(truth, color="#d62728", ls="--", lw=2, label=f"BS = {truth:.4f}")
+    ax2.set_xscale("log")
+    ax2.set_title("Binomial tree convergence")
+    ax2.set_xlabel("steps (log)")
+    ax2.set_ylabel("price")
+    ax2.grid(alpha=0.3, which="both")
+    ax2.legend()
+
+    fig.suptitle(f"Numerical pricers → Black-Scholes  ({kind})", fontsize=13, y=1.02)
+    return _finish(fig, save_path)
+
+
 def plot_payoff_diagram(
     S, K, T, r, sigma, q=0.0, kind="call", save_path=None,
 ):

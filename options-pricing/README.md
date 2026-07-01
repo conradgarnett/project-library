@@ -164,6 +164,7 @@ the MC 95% CI as paths grow — see `figures/mc_convergence.png`.
 - `vol_smile.png` — implied-vol smile / skew across strikes
 - `vol_surface.png` — 3-D implied-vol surface over (strike, maturity)
 - `mc_convergence.png` — MC price ± CI converging to Black-Scholes
+- `model_convergence.png` — MC *and* binomial tree both converging to Black-Scholes
 - `payoff_diagram.png` — payoff, P&L, and current value with breakeven
 - `sample_paths.png` — simulated GBM paths + terminal distribution
 - `strategy_iron_condor.png` — multi-leg strategy P&L with breakevens & Greeks

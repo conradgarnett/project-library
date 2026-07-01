@@ -89,6 +89,7 @@ def main():
         "vol_smile.png": lambda p: viz.plot_vol_smile(S=S, save_path=p),
         "vol_surface.png": lambda p: viz.plot_vol_surface(S=S, save_path=p),
         "mc_convergence.png": lambda p: viz.plot_mc_convergence(S, K, T, r, sigma, q, "call", save_path=p),
+        "model_convergence.png": lambda p: viz.plot_model_convergence(S, K, T, r, sigma, q, "call", save_path=p),
         "payoff_diagram.png": lambda p: viz.plot_payoff_diagram(S, K, T, r, sigma, q, "call", save_path=p),
         "sample_paths.png": lambda p: viz.plot_sample_paths(S, K, T, r, sigma, q, "call", save_path=p),
         "strategy_iron_condor.png": lambda p: viz.plot_strategy_pnl(iron_condor(85, 95, 110, 120), S, T, r, sigma, q, save_path=p),
