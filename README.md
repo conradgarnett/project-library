@@ -45,8 +45,9 @@ data.price_panel   →   pairs.screen_pairs   →   backtest.backtest_pair   →
 | `cryptostat/pairs.py` | Scan every pair in a universe, rank cointegrated candidates by test statistic and half-life |
 | `cryptostat/signals.py` | Baseline z-score signal **+ the research surface (your edge goes here)** |
 | `cryptostat/backtest.py` | Vectorized, look-ahead-free pairs backtester with transaction costs |
+| `cryptostat/walkforward.py` | **Out-of-sample validation**: re-fit on a rolling train window, trade only the next unseen window; reports the in-sample-vs-OOS overfitting gap |
 | `cryptostat/metrics.py` | Sharpe, Sortino, Calmar, max drawdown, hit rate, equity curve |
-| `scripts/` | `01_fetch_universe` → `02_screen_pairs` → `03_backtest_pair` |
+| `scripts/` | `01_fetch_universe` → `02_screen_pairs` → `03_backtest_pair` → `04_walk_forward` |
 | `tests/` | Cointegration + backtest correctness on synthetic series with known truth |
 
 ## Quick start
@@ -56,9 +57,10 @@ pip install -r requirements.txt        # numpy, scipy, pandas, requests (+ optio
 
 python scripts/01_fetch_universe.py     # download ~2y daily prices (cached to data/)
 python scripts/02_screen_pairs.py       # rank cointegrated pairs
-python scripts/03_backtest_pair.py --a BCH-USD --b LTC-USD   # backtest one pair
+python scripts/03_backtest_pair.py --a BCH-USD --b LTC-USD   # in-sample backtest
+python scripts/04_walk_forward.py  --a MATIC-USD --b ADA-USD # honest out-of-sample test
 
-python tests/run_all.py                 # 12 tests, no pytest needed
+python tests/run_all.py                 # 17 tests, no pytest needed
 ```
 
 ```python
@@ -87,9 +89,10 @@ costs — which is the point. Real edge comes from the work below (each is a
 self-contained experiment: implement, backtest, and keep only what survives
 **out-of-sample**):
 
-1. **Walk-forward validation.** The baseline estimates β and z-score stats on the
-   full sample (mild look-ahead). Split into rolling train/validate windows and
-   re-estimate; report only out-of-sample performance.
+1. **Walk-forward validation — built (`cryptostat/walkforward.py`).** Use it as
+   the judge for *every* idea below: an experiment only counts if it improves the
+   **out-of-sample** Sharpe, not the in-sample one. (On the raw baseline the gap
+   is large and OOS is negative — that's your starting point to beat.)
 2. **Dynamic hedge ratio (Kalman filter).** Replace the static β with a Kalman
    filter so the spread tracks a slowly-drifting relationship.
 3. **Half-life-aware signals & time-stops.** Scale windows/holding to each pair's
@@ -117,4 +120,6 @@ self-contained experiment: implement, backtest, and keep only what survives
 (ADF separates random walks from stationary series; Engle-Granger detects a
 constructed cointegrated pair and rejects independent walks; half-life recovers a
 known OU speed) and the backtester (profitable on a synthetic mean-reverting
-spread, flat when never triggered, costs reduce returns). All 12 pass.
+spread, flat when never triggered, costs reduce returns) and the walk-forward
+harness (no leakage, stands down on broken pairs, tradeable OOS on a real OU
+spread). All 17 pass.

@@ -21,12 +21,14 @@ from .data import fetch_ohlcv, price_panel, DEFAULT_UNIVERSE
 from .pairs import screen_pairs
 from .signals import zscore_signal
 from .backtest import backtest_pair, BacktestResult
+from .walkforward import walk_forward, WalkForwardResult
 from .metrics import performance_summary, sharpe, max_drawdown, equity_curve
 
 __all__ = [
     "adf_test", "engle_granger", "hedge_ratio", "half_life", "zscore",
     "fetch_ohlcv", "price_panel", "DEFAULT_UNIVERSE",
     "screen_pairs", "zscore_signal", "backtest_pair", "BacktestResult",
+    "walk_forward", "WalkForwardResult",
     "performance_summary", "sharpe", "max_drawdown", "equity_curve",
 ]
 
