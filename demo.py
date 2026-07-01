@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
 import pandas as pd
 
 from optlib.black_scholes import bs_greeks
@@ -140,7 +141,37 @@ def main():
         print(f"       realized={rv:.0%}: P&L={res['mean_pnl']:+.4f} "
               f"(predicted {res['predicted_pnl']:+.4f})")
 
-    section("11. Generating figures -> figures/")
+    section("11. Scenario / risk grid — iron condor")
+    from optlib.scenario import scenario_grid, scenario_summary
+    ic = iron_condor(85, 95, 110, 120)
+    grid = scenario_grid(ic, S0=S, T=0.25, r=r, sigma0=0.25)
+    print(f"    entry value {grid.entry_value:+.3f}   (grid: {grid.vols.size} vols × "
+          f"{grid.spots.size} spots)")
+    print(scenario_summary(grid).to_string(index=False))
+
+    section("12. Volatility-smile calibration (SVI + Merton)")
+    from optlib.market import (
+        calibrate_merton, calibrate_svi, calibration_rmse, synthetic_smile,
+    )
+    try:
+        from optlib.market import fetch_option_chain
+        mk = fetch_option_chain("SPY", expiry_index=6, kind="call")
+        mstrikes = mk["smile"]["strike"].values
+        mivs = mk["smile"]["iv"].values
+        mS, mT, mr = mk["S"], mk["T"], mk["r"]
+        source = f"LIVE {mk['ticker']} exp {mk['expiry']} (S={mS:.2f}, {len(mstrikes)} strikes)"
+    except Exception as e:  # offline fallback
+        mS, mT, mr = 100.0, 0.5, 0.045
+        mstrikes, mivs = synthetic_smile(mS, mT, mr, sigma=0.2, lam=1.0, muJ=-0.12, sigJ=0.15)
+        source = f"SYNTHETIC (live fetch unavailable: {type(e).__name__})"
+    print(f"    smile source: {source}")
+    svi = calibrate_svi(mstrikes, mivs, mS, mT)
+    mert = calibrate_merton(mstrikes, mivs, mS, mT, mr)
+    print(f"    SVI    fit RMSE = {calibration_rmse(svi, mstrikes, mivs, mS, mT)*100:.3f} vol pts")
+    print(f"    Merton fit RMSE = {calibration_rmse(mert, mstrikes, mivs, mS, mT, mr)*100:.3f} vol pts"
+          f"   (σ={mert.sigma:.3f}, λ={mert.lam:.2f}, μJ={mert.muJ:.3f}, σJ={mert.sigJ:.3f})")
+
+    section("13. Generating figures -> figures/")
     figures = {
         "greeks_vs_spot.png": lambda p: viz.plot_greeks_vs_spot(K, T, r, sigma, q, "call", save_path=p),
         "vol_smile.png": lambda p: viz.plot_vol_smile(S=S, save_path=p),
@@ -153,6 +184,13 @@ def main():
         "risk_neutral_density.png": lambda p: viz.plot_risk_neutral_density(S, K, T, r, sigma, q, save_path=p),
         "iv_vs_realized_hedge.png": lambda p: viz.plot_iv_vs_realized_hedge(S, K, T, r, 0.28, q, "call", save_path=p),
         "model_smiles.png": lambda p: viz.plot_model_smiles(S=S, T=1.0, r=r, save_path=p),
+        "scenario_heatmap.png": lambda p: viz.plot_scenario_heatmap(
+            grid, "pnl", S0=S, title="Iron condor P&L — spot × volatility", save_path=p),
+        "smile_calibration.png": lambda p: viz.plot_market_smile(
+            mstrikes, mivs,
+            fitted={"SVI": svi.implied_vol(np.log(np.asarray(mstrikes) / mS), mT),
+                    "Merton": mert.implied_vol(mstrikes, mS, mT, mr)},
+            S=mS, title=f"Smile calibration — {source}", save_path=p),
     }
     for name, fn in figures.items():
         path = os.path.join(FIG_DIR, name)

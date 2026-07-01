@@ -82,6 +82,20 @@ from .implied import (
     breakeven_move,
     delta_hedge_pnl,
 )
+from .scenario import (
+    scenario_grid,
+    scenario_summary,
+    ScenarioResult,
+)
+from .market import (
+    fetch_option_chain,
+    synthetic_smile,
+    calibrate_svi,
+    calibrate_merton,
+    calibration_rmse,
+    SVIParams,
+    MertonParams,
+)
 
 __all__ = [
     "BlackScholes",
@@ -117,6 +131,16 @@ __all__ = [
     "variance_risk_premium",
     "breakeven_move",
     "delta_hedge_pnl",
+    "scenario_grid",
+    "scenario_summary",
+    "ScenarioResult",
+    "fetch_option_chain",
+    "synthetic_smile",
+    "calibrate_svi",
+    "calibrate_merton",
+    "calibration_rmse",
+    "SVIParams",
+    "MertonParams",
 ]
 
 __version__ = "1.0.0"

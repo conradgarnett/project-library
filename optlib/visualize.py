@@ -235,6 +235,54 @@ def plot_payoff_diagram(
 
 
 # --------------------------------------------------------------------------- #
+def plot_scenario_heatmap(scenario_result, metric="pnl", S0=None, title=None, save_path=None):
+    """
+    Heatmap of a scenario/risk grid metric over spot (x) × vol (y).
+    ``scenario_result`` is the object returned by ``optlib.scenario.scenario_grid``.
+    """
+    res = scenario_result
+    Z = res.metrics[metric]
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    diverging = metric in ("pnl", "delta", "theta", "rho")
+    cmap = "RdYlGn" if diverging else "viridis"
+    vmax = np.abs(Z).max() if diverging else None
+    vmin = -vmax if diverging else None
+    im = ax.imshow(Z, origin="lower", aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax,
+                   extent=[res.spots[0], res.spots[-1],
+                           res.vols[0] * 100, res.vols[-1] * 100])
+    if S0 is not None:
+        ax.axvline(S0, color="black", ls=":", lw=1, alpha=0.6, label="spot $S_0$")
+        ax.legend(loc="upper left")
+    fig.colorbar(im, ax=ax, label=metric)
+    ax.set_title(title or f"Scenario {metric} — spot × volatility"
+                 f"  (T_eval={res.T_eval:.3f}y)")
+    ax.set_xlabel("underlying spot")
+    ax.set_ylabel("volatility (%)")
+    return _finish(fig, save_path)
+
+
+def plot_market_smile(strikes, market_ivs, fitted=None, S=None, title=None, save_path=None):
+    """
+    Plot a market implied-vol smile (points), optionally with one or more fitted
+    curves overlaid. ``fitted`` is a dict {label: iv_array} aligned to ``strikes``.
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(strikes, np.asarray(market_ivs) * 100, s=28, color="#333333",
+               zorder=3, label="market IV")
+    if fitted:
+        colors = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd"]
+        for (label, iv), c in zip(fitted.items(), colors):
+            ax.plot(strikes, np.asarray(iv) * 100, lw=2, color=c, label=label)
+    if S is not None:
+        ax.axvline(S, color="grey", ls=":", label="spot")
+    ax.set_title(title or "Market implied-volatility smile")
+    ax.set_xlabel("strike K")
+    ax.set_ylabel("implied volatility (%)")
+    ax.grid(alpha=0.3)
+    ax.legend()
+    return _finish(fig, save_path)
+
+
 def plot_risk_neutral_density(S, K_center, T, r, sigma, q=0.0, save_path=None):
     """
     The implied risk-neutral density recovered from model call prices via

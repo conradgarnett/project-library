@@ -2,3 +2,7 @@ numpy>=1.24
 scipy>=1.10
 matplotlib>=3.7
 pandas>=2.0
+
+# Optional: only needed for live option-chain fetching in optlib/market.py.
+# The calibration and everything else work fully offline without it.
+yfinance>=0.2
