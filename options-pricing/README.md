@@ -16,8 +16,10 @@ services, fully reproducible.
 | --- | --- |
 | `optlib/black_scholes.py` | BSM price, Delta/Gamma/Vega/Theta/Rho, implied vol (Brent), put-call parity check |
 | `optlib/monte_carlo.py` | Risk-neutral GBM pricer with antithetic variates + control variate, standard errors / 95% CI, finite-difference Greeks (common random numbers), path simulation |
-| `optlib/compare.py` | BS ↔ MC comparison tables for price, Greeks, and convergence |
-| `optlib/visualize.py` | Greek curves, vol smile, vol surface, MC convergence, payoff/P&L, sample paths |
+| `optlib/binomial.py` | Cox-Ross-Rubinstein lattice pricer — European **and American** options (early exercise), plus tree Greeks |
+| `optlib/strategy.py` | Multi-leg strategy analyzer: net premium, aggregate Greeks, payoff/P&L, breakevens, max profit/loss + ready-made spreads/straddle/strangle/condor/covered-call/protective-put |
+| `optlib/compare.py` | Three-way (BS / MC / binomial) comparison tables for price, Greeks, and convergence |
+| `optlib/visualize.py` | Greek curves, vol smile, vol surface, MC convergence, payoff/P&L, sample paths, strategy P&L |
 | `cli.py` | Command-line calculator |
 | `demo.py` | End-to-end report + figure generation |
 | `tests/test_pricing.py` | Correctness tests (reference prices, parity, FD Greek checks, IV round-trip, MC-in-CI) |
@@ -62,6 +64,17 @@ print(mc_price(100, 105, 0.75, 0.045, 0.28, q=0.01, kind="call"))
 print(compare_prices(100, 105, 0.75, 0.045, 0.28, q=0.01))
 ```
 
+```python
+# Binomial tree — American put with early exercise
+from optlib import binomial_price
+print(binomial_price(100, 110, 1.0, 0.06, 0.3, kind="put", exercise="american"))
+
+# Multi-leg strategy — aggregate Greeks, breakevens, max profit/loss
+from optlib.strategy import iron_condor
+prof = iron_condor(85, 95, 110, 120).profile(S=100, T=0.5, r=0.04, sigma=0.25)
+print(prof["net_premium"], prof["breakevens"], prof["greeks"]["delta"])
+```
+
 ---
 
 ## The model
@@ -98,9 +111,30 @@ differencing is stable.
 
 ---
 
-## Do the two models agree?
+### Binomial tree (CRR) — European & American
 
-From `demo.py` (contract `S=100, K=105, T=0.75, r=4.5%, σ=28%, q=1%`, 1M paths):
+A lattice with up/down factors `u = e^{σ√dt}`, `d = 1/u`, risk-neutral
+probability `p = (e^{(r-q)dt} - d)/(u - d)`, solved by backward induction. For
+American options the node value is `max(continuation, intrinsic)` at every step,
+capturing the early-exercise premium.
+
+---
+
+## Do the models agree?
+
+From `demo.py` (contract `S=100, K=105, T=0.75, r=4.5%, σ=28%, q=1%`, 1M paths,
+1000 tree steps) — three independent methods land on the same price:
+
+```
+model                        price    note
+Black-Scholes (closed form)  8.5976   analytic truth
+Monte-Carlo (simulation)     8.6026   ±0.0073 SE (95% CI 8.5882-8.6170)
+Binomial tree, European      8.5979   err vs BS = 0.0003
+Binomial tree, American      8.5979   early-exercise premium = 0.0000
+```
+
+For the **put**, the American tree correctly shows a positive early-exercise
+premium (10.86 European → 11.24 American). Call/put price agreement vs MC:
 
 ```
 kind   black_scholes  monte_carlo  mc_std_error  abs_error  bs_within_ci
@@ -132,6 +166,7 @@ the MC 95% CI as paths grow — see `figures/mc_convergence.png`.
 - `mc_convergence.png` — MC price ± CI converging to Black-Scholes
 - `payoff_diagram.png` — payoff, P&L, and current value with breakeven
 - `sample_paths.png` — simulated GBM paths + terminal distribution
+- `strategy_iron_condor.png` — multi-leg strategy P&L with breakevens & Greeks
 
 ---
 
@@ -145,5 +180,10 @@ the MC 95% CI as paths grow — see `figures/mc_convergence.png`.
 - implied-vol round-trip (price → σ → price)
 - expiry intrinsic values
 - Monte-Carlo price within a few standard errors of Black-Scholes
+- binomial European price converges to Black-Scholes
+- American ≥ European, with a strictly positive early-exercise premium for the
+  American put on a non-dividend stock
+- strategy Greeks, breakevens, and capped payoffs (bull spread, straddle,
+  covered call)
 
-All 9 tests pass.
+All 12 tests pass.

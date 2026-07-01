@@ -17,7 +17,13 @@ import os
 import pandas as pd
 
 from optlib.black_scholes import bs_greeks
-from optlib.compare import compare_greeks, compare_prices, convergence_table
+from optlib.compare import (
+    compare_all_models,
+    compare_greeks,
+    compare_prices,
+    convergence_table,
+)
+from optlib.strategy import bull_call_spread, iron_condor, straddle
 from optlib import visualize as viz
 
 pd.set_option("display.width", 120)
@@ -56,10 +62,28 @@ def main():
     section("3. Black-Scholes vs Monte-Carlo — GREEKS (call)")
     print(compare_greeks(S, K, T, r, sigma, q, "call", n_paths=1_000_000).to_string(index=False))
 
-    section("4. Monte-Carlo convergence (call)")
+    section("4. Three-model price comparison (call): BS vs MC vs Binomial")
+    print(compare_all_models(S, K, T, r, sigma, q, "call").to_string(index=False))
+    print("\n  (put — note the American early-exercise premium)")
+    print(compare_all_models(S, K, T, r, sigma, q, "put").to_string(index=False))
+
+    section("5. Monte-Carlo convergence (call)")
     print(convergence_table(S, K, T, r, sigma, q, "call").to_string(index=False))
 
-    section("5. Generating figures -> figures/")
+    section("6. Multi-leg strategy analysis")
+    for strat in (bull_call_spread(95, 110), straddle(K), iron_condor(85, 95, 110, 120)):
+        p = strat.profile(S, T, r, sigma, q)
+        gk = p["greeks"]
+        be = ", ".join(f"{b:.2f}" for b in p["breakevens"]) or "none"
+        print(f"\n  {p['name']}")
+        print(f"    net premium   {p['net_premium']:+.4f}   "
+              f"max profit {p['max_profit']:.4f}   max loss {p['max_loss']:.4f}")
+        print(f"    breakevens    {be}")
+        print(f"    Δ={gk['delta']:.4f}  Γ={gk['gamma']:.4f}  "
+              f"V(/1%)={gk['vega']/100:.4f}  Θ(/day)={gk['theta']/365:.4f}  "
+              f"ρ(/1%)={gk['rho']/100:.4f}")
+
+    section("7. Generating figures -> figures/")
     figures = {
         "greeks_vs_spot.png": lambda p: viz.plot_greeks_vs_spot(K, T, r, sigma, q, "call", save_path=p),
         "vol_smile.png": lambda p: viz.plot_vol_smile(S=S, save_path=p),
@@ -67,6 +91,7 @@ def main():
         "mc_convergence.png": lambda p: viz.plot_mc_convergence(S, K, T, r, sigma, q, "call", save_path=p),
         "payoff_diagram.png": lambda p: viz.plot_payoff_diagram(S, K, T, r, sigma, q, "call", save_path=p),
         "sample_paths.png": lambda p: viz.plot_sample_paths(S, K, T, r, sigma, q, "call", save_path=p),
+        "strategy_iron_condor.png": lambda p: viz.plot_strategy_pnl(iron_condor(85, 95, 110, 120), S, T, r, sigma, q, save_path=p),
     }
     for name, fn in figures.items():
         path = os.path.join(FIG_DIR, name)

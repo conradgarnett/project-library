@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .binomial import binomial_price
 from .black_scholes import bs_greeks, bs_price
 from .monte_carlo import MonteCarloPricer
 
@@ -48,6 +49,34 @@ def compare_prices(
             }
         )
     return pd.DataFrame(rows)
+
+
+def compare_all_models(
+    S, K, T, r, sigma, q=0.0, kind="call",
+    n_paths=1_000_000, n_steps=1000, seed=42,
+) -> pd.DataFrame:
+    """
+    Three-way price comparison: Black-Scholes (closed form), Monte-Carlo
+    (simulation), and CRR binomial tree (lattice), plus the American binomial
+    price to show the early-exercise premium.
+
+    All three European numbers should agree to within Monte-Carlo error.
+    """
+    bs = float(bs_price(S, K, T, r, sigma, q, kind))
+    mc = MonteCarloPricer(n_paths=n_paths, seed=seed).price(S, K, T, r, sigma, q, kind)
+    euro = binomial_price(S, K, T, r, sigma, q, kind, "european", n_steps)
+    amer = binomial_price(S, K, T, r, sigma, q, kind, "american", n_steps)
+    return pd.DataFrame(
+        [
+            {"model": "Black-Scholes (closed form)", "price": bs, "note": "analytic truth"},
+            {"model": "Monte-Carlo (simulation)", "price": mc.price,
+             "note": f"±{mc.std_error:.4f} SE (95% CI {mc.ci_low:.4f}-{mc.ci_high:.4f})"},
+            {"model": "Binomial tree, European", "price": euro,
+             "note": f"{n_steps} steps; err vs BS = {abs(euro - bs):.4f}"},
+            {"model": "Binomial tree, American", "price": amer,
+             "note": f"early-exercise premium = {amer - euro:.4f}"},
+        ]
+    )
 
 
 def compare_greeks(

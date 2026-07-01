@@ -45,6 +45,14 @@ from .monte_carlo import (
     MCResult,
     mc_price,
 )
+from .binomial import (
+    binomial_price,
+    binomial_greeks,
+)
+from .strategy import (
+    Strategy,
+    Leg,
+)
 
 __all__ = [
     "BlackScholes",
@@ -57,6 +65,10 @@ __all__ = [
     "MonteCarloPricer",
     "MCResult",
     "mc_price",
+    "binomial_price",
+    "binomial_greeks",
+    "Strategy",
+    "Leg",
 ]
 
 __version__ = "1.0.0"

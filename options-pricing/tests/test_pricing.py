@@ -31,6 +31,8 @@ from optlib.black_scholes import (  # noqa: E402
     put_call_parity_gap,
 )
 from optlib.monte_carlo import MonteCarloPricer  # noqa: E402
+from optlib.binomial import binomial_price  # noqa: E402
+from optlib.strategy import bull_call_spread, straddle, covered_call  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -133,6 +135,47 @@ def test_monte_carlo_greeks_close():
     assert abs(mc["delta"] - analytic.delta) < 0.02
     assert abs(mc["vega"] - analytic.vega) < 1.0
     assert abs(mc["price"] - analytic.price) < 0.05
+
+
+def test_binomial_converges_to_bs():
+    S, K, T, r, sigma, q = 100, 105, 0.75, 0.045, 0.28, 0.01
+    for kind in ("call", "put"):
+        bs = bs_price(S, K, T, r, sigma, q, kind)
+        tree = binomial_price(S, K, T, r, sigma, q, kind, "european", n_steps=2000)
+        assert abs(tree - bs) < 0.02, (kind, tree, bs)
+
+
+def test_american_ge_european():
+    # American options are worth at least their European counterpart.
+    S, K, T, r, sigma, q = 100, 110, 1.0, 0.06, 0.3, 0.0
+    for kind in ("call", "put"):
+        euro = binomial_price(S, K, T, r, sigma, q, kind, "european", 800)
+        amer = binomial_price(S, K, T, r, sigma, q, kind, "american", 800)
+        assert amer >= euro - 1e-6, (kind, amer, euro)
+    # American put on a non-dividend stock has a strictly positive early-exercise
+    # premium; the American call does not.
+    put_e = binomial_price(S, K, T, r, sigma, 0.0, "put", "european", 800)
+    put_a = binomial_price(S, K, T, r, sigma, 0.0, "put", "american", 800)
+    assert put_a > put_e + 1e-3
+
+
+def test_strategy_greeks_and_breakeven():
+    S, T, r, sigma = 100, 0.5, 0.04, 0.25
+    # Bull call spread: long 95 call, short 110 call -> net debit, capped payoff.
+    spread = bull_call_spread(95, 110)
+    prof = spread.profile(S, T, r, sigma)
+    assert prof["net_premium"] > 0                      # debit strategy
+    assert prof["max_profit"] > 0 and prof["max_loss"] < 0
+    assert len(prof["breakevens"]) == 1
+    # Long straddle is delta-near-zero at the money and long vega/gamma.
+    g = straddle(100).greeks(S, T, r, sigma)
+    assert abs(g["delta"]) < 0.25
+    assert g["vega"] > 0 and g["gamma"] > 0
+    # Covered call payoff = long underlying + short call; capped at the strike.
+    cc = covered_call(105)
+    payoff = cc.payoff_at_expiry(np.array([90.0, 105.0, 130.0]))
+    assert payoff[0] == 90.0                     # below strike: just the stock
+    assert payoff[1] == 105.0 and payoff[2] == 105.0  # capped at 105 once assigned
 
 
 # --------------------------------------------------------------------------- #

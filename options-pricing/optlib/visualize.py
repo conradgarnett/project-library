@@ -191,6 +191,37 @@ def plot_payoff_diagram(
 
 
 # --------------------------------------------------------------------------- #
+def plot_strategy_pnl(strategy, S, T, r, sigma, q=0.0, save_path=None):
+    """
+    Plot the expiry P&L of a multi-leg :class:`optlib.strategy.Strategy`, with
+    breakevens, max profit/loss, and profit/loss shading.
+    """
+    prof = strategy.profile(S, T, r, sigma, q)
+    grid, pnl = prof["grid"], prof["pnl"]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(grid, pnl, color="#1f77b4", lw=2, label="P&L at expiry")
+    ax.axhline(0, color="black", lw=0.8)
+    ax.axvline(S, color="grey", ls=":", label=f"spot = {S}")
+    ax.fill_between(grid, pnl, 0, where=pnl > 0, color="green", alpha=0.12)
+    ax.fill_between(grid, pnl, 0, where=pnl < 0, color="red", alpha=0.12)
+    for be in prof["breakevens"]:
+        ax.axvline(be, color="green", ls="--", lw=1, alpha=0.7)
+        ax.annotate(f"BE {be:.1f}", (be, 0), textcoords="offset points",
+                    xytext=(3, 8), fontsize=8, color="green")
+    g = prof["greeks"]
+    subtitle = (f"net premium={prof['net_premium']:.2f}  |  "
+                f"max P={prof['max_profit']:.2f}  max L={prof['max_loss']:.2f}  |  "
+                f"Δ={g['delta']:.2f} Γ={g['gamma']:.3f} "
+                f"V={g['vega'] / 100:.2f} Θ={g['theta'] / 365:.3f}")
+    ax.set_title(f"{prof['name']}\n{subtitle}", fontsize=11)
+    ax.set_xlabel("Underlying at expiry")
+    ax.set_ylabel("Profit / Loss")
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    return _finish(fig, save_path)
+
+
 def plot_sample_paths(
     S, K, T, r, sigma, q=0.0, kind="call",
     n_paths=200, n_steps=252, seed=7, save_path=None,
