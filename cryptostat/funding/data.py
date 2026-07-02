@@ -73,3 +73,41 @@ def funding_history(coin: str = "BTC", limit: int = 1095) -> pd.DataFrame:
     df = (df.drop_duplicates("fundingTime").set_index("fundingTime")
             .sort_index()[["funding_rate"]])
     return df.tail(limit)
+
+
+# --------------------------------------------------------------------------- #
+# Price history (for the basis-aware carry backtest)
+# --------------------------------------------------------------------------- #
+def _okx_candles(inst: str, bar: str = "4H", limit: int = 2000) -> pd.Series:
+    """Time-indexed close prices from OKX history-candles, paged back to ``limit``."""
+    url = "https://www.okx.com/api/v5/market/history-candles"
+    rows, after = [], None
+    while len(rows) < limit:
+        params = {"instId": inst, "bar": bar, "limit": 100}
+        if after:
+            params["after"] = after
+        d = _SESSION.get(url, params=params, timeout=20).json()
+        data = d.get("data", [])
+        if not data:
+            break
+        rows.extend(data)
+        after = data[-1][0]                     # oldest ts in batch -> page back
+        time.sleep(0.15)
+        if len(data) < 100:
+            break
+    if not rows:
+        raise RuntimeError(f"no OKX candles for {inst}")
+    idx = pd.to_datetime([int(r[0]) for r in rows], unit="ms", utc=True)
+    close = [float(r[4]) for r in rows]
+    return (pd.Series(close, index=idx, name="close")
+            .loc[lambda s: ~s.index.duplicated()].sort_index())
+
+
+def perp_price_history(coin: str = "BTC", bar: str = "4H", limit: int = 2000) -> pd.Series:
+    """OKX perpetual-swap mark/close price history for a coin."""
+    return _okx_candles(_inst(coin), bar=bar, limit=limit)
+
+
+def spot_price_history(coin: str = "BTC", bar: str = "4H", limit: int = 2000) -> pd.Series:
+    """OKX spot (`COIN-USDT`) price history for a coin."""
+    return _okx_candles(f"{coin.upper()}-USDT", bar=bar, limit=limit)

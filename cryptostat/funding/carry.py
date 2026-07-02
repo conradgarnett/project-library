@@ -13,11 +13,17 @@ Two modes:
     switch sides (short-spot / long-perp) to earn its magnitude, paying a
     rebalance fee on each switch.
 
-Modeling assumptions (documented so they can be made more realistic):
-  * The spot/perp hedge is perfect, so price P&L is ~0 and the return per
-    interval is just the funding collected minus fees. Real hedges have basis
-    drift and the perp leg carries liquidation risk.
-  * ``fee_bps`` is charged once at setup (naive) or on each side flip.
+Two backtest models:
+  * ``carry_backtest``      — IDEALIZED: assumes a perfect hedge, so the return
+    is just the funding collected. Optimistic (inflates Sharpe).
+  * ``basis_carry_backtest`` — BASIS-AWARE: uses the real perp & spot price paths,
+    so the return includes the actual price-leg P&L (= -Δbasis). This is the
+    honest model. Even a tiny same-venue basis (vol < 1 bp) meaningfully cuts the
+    Sharpe, because the per-8h funding drip is itself tiny — the basis *changes*
+    dominate the return variance.
+
+Still not modeled (perp-leg liquidation risk, exchange/counterparty risk); see
+the README "Next steps".
 """
 
 from __future__ import annotations
@@ -28,7 +34,12 @@ import numpy as np
 import pandas as pd
 
 from ..common.metrics import max_drawdown, sharpe
-from .data import FUNDING_INTERVALS_PER_YEAR
+from .data import (
+    FUNDING_INTERVALS_PER_YEAR,
+    funding_history,
+    perp_price_history,
+    spot_price_history,
+)
 
 
 @dataclass
@@ -42,6 +53,9 @@ class CarryResult:
     mean_funding_annualized: float
     flip: bool
     n_intervals: int
+    basis_aware: bool = False       # True if the spot/perp basis P&L is included
+    basis_mean_bps: float | None = None
+    basis_vol_bps: float | None = None
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -49,55 +63,118 @@ class CarryResult:
         return d
 
     def summary(self) -> str:
-        return (
-            f"Funding carry ({'flip' if self.flip else 'long-basis'}), "
-            f"{self.n_intervals} intervals\n"
-            f"  annualized yield (simple)     : {self.ann_yield_simple:6.2%}\n"
-            f"  annualized return (compounded): {self.ann_return_compounded:6.2%}\n"
-            f"  Sharpe                        : {self.sharpe:6.2f}\n"
-            f"  max drawdown                  : {self.max_drawdown:6.2%}\n"
-            f"  intervals collecting (>0)     : {self.pct_intervals_positive:6.1%}\n"
-            f"  raw mean funding (annualized) : {self.mean_funding_annualized:6.2%}"
-        )
+        model = "basis-aware" if self.basis_aware else "idealized (funding only)"
+        lines = [
+            f"Funding carry ({'flip' if self.flip else 'long-basis'}, {model}), "
+            f"{self.n_intervals} intervals",
+            f"  annualized yield (simple)     : {self.ann_yield_simple:6.2%}",
+            f"  annualized return (compounded): {self.ann_return_compounded:6.2%}",
+            f"  Sharpe                        : {self.sharpe:6.2f}",
+            f"  max drawdown                  : {self.max_drawdown:6.2%}",
+            f"  intervals collecting (>0)     : {self.pct_intervals_positive:6.1%}",
+            f"  raw mean funding (annualized) : {self.mean_funding_annualized:6.2%}",
+        ]
+        if self.basis_aware:
+            lines.append(f"  perp-spot basis (bps)         : "
+                         f"mean {self.basis_mean_bps:+.2f}, vol {self.basis_vol_bps:.2f}")
+        return "\n".join(lines)
+
+
+def _build_result(ret, f, flip, basis_aware=False, basis=None) -> CarryResult:
+    n = len(ret)
+    ppy = FUNDING_INTERVALS_PER_YEAR
+    return CarryResult(
+        returns=ret,
+        ann_yield_simple=float(ret.mean() * ppy) if n else 0.0,
+        ann_return_compounded=float((1 + ret).prod() ** (ppy / n) - 1) if n else 0.0,
+        sharpe=sharpe(ret, periods_per_year=ppy),
+        max_drawdown=max_drawdown(ret)[0] if n else 0.0,
+        pct_intervals_positive=float((ret > 0).mean()) if n else 0.0,
+        mean_funding_annualized=float(f.mean() * ppy) if n else 0.0,
+        flip=flip, n_intervals=n, basis_aware=basis_aware,
+        basis_mean_bps=(float(basis.mean() * 1e4) if basis is not None else None),
+        basis_vol_bps=(float(basis.std() * 1e4) if basis is not None else None),
+    )
+
+
+def _as_rate(funding):
+    f = funding["funding_rate"] if isinstance(funding, pd.DataFrame) else funding
+    return f.dropna().astype(float)
 
 
 def carry_backtest(funding, fee_bps: float = 5.0, flip: bool = False) -> CarryResult:
     """
-    Backtest the delta-neutral funding carry from a funding-rate history.
-
-    ``funding`` is a DataFrame with a ``funding_rate`` column (or a Series) of
-    per-interval rates. Returns a :class:`CarryResult`.
+    **Idealized** delta-neutral funding carry: assumes a perfect hedge, so the
+    return each interval is just the funding collected minus fees. Optimistic —
+    it ignores spot/perp basis moves (see :func:`basis_carry_backtest`).
     """
-    f = funding["funding_rate"] if isinstance(funding, pd.DataFrame) else funding
-    f = f.dropna().astype(float)
+    f = _as_rate(funding)
     fee = fee_bps / 1e4
-
     if flip:
         gross = f.abs()                              # always collect the magnitude
         side = np.sign(f).replace(0, 1)
-        switched = side.diff().abs() > 0
-        cost = switched.astype(float) * fee
+        cost = (side.diff().abs() > 0).astype(float) * fee
         if len(cost):
             cost.iloc[0] = fee                       # initial setup
     else:
         gross = f.copy()                             # short-perp: +funding if >0, pay if <0
         cost = pd.Series(0.0, index=f.index)
         if len(cost):
-            cost.iloc[0] = fee                       # one-time setup
-    ret = gross - cost
+            cost.iloc[0] = fee
+    return _build_result(gross - cost, f, flip)
 
-    n = len(ret)
-    ppy = FUNDING_INTERVALS_PER_YEAR
-    ann_simple = float(ret.mean() * ppy) if n else 0.0
-    compounded = float((1 + ret).prod() ** (ppy / n) - 1) if n else 0.0
-    return CarryResult(
-        returns=ret,
-        ann_yield_simple=ann_simple,
-        ann_return_compounded=compounded,
-        sharpe=sharpe(ret, periods_per_year=ppy),
-        max_drawdown=max_drawdown(ret)[0] if n else 0.0,
-        pct_intervals_positive=float((ret > 0).mean()) if n else 0.0,
-        mean_funding_annualized=float(f.mean() * ppy) if n else 0.0,
-        flip=flip,
-        n_intervals=n,
-    )
+
+def basis_carry_backtest(funding, perp_price, spot_price,
+                         fee_bps: float = 5.0, flip: bool = False) -> CarryResult:
+    """
+    **Basis-aware** delta-neutral funding carry — the honest version.
+
+    Uses the actual perp and spot price paths so the return each interval is the
+    funding collected **plus the real P&L of the two price legs**. For a
+    long-spot / short-perp position that price P&L equals ``-Δ(basis)`` where
+    ``basis = perp/spot − 1``:
+
+        return_t = σ · (funding_t − Δbasis_t) − flip_cost
+
+    with σ = +1 (long-basis) or σ = sign(funding) (flip). When the hedge is
+    within one venue the basis is tiny, so this barely dents the Sharpe — but it
+    is the correct model, and it exposes basis risk when hedging across venues.
+
+    ``perp_price`` / ``spot_price`` are time-indexed Series; they are aligned to
+    the funding timestamps.
+    """
+    f = _as_rate(funding)
+    perp = perp_price.reindex(f.index)
+    spot = spot_price.reindex(f.index)
+    keep = f.notna() & perp.notna() & spot.notna()
+    f, perp, spot = f[keep], perp[keep], spot[keep]
+
+    basis = perp / spot - 1.0                        # perp premium over spot
+    dbasis = basis.diff().fillna(0.0)
+    sigma = np.sign(f).replace(0, 1) if flip else pd.Series(1.0, index=f.index)
+
+    gross = sigma * (f - dbasis)
+    fee = fee_bps / 1e4
+    if flip:
+        cost = (sigma.diff().abs() > 0).astype(float) * fee
+    else:
+        cost = pd.Series(0.0, index=f.index)
+    if len(cost):
+        cost.iloc[0] = fee
+    return _build_result(gross - cost, f, flip, basis_aware=True, basis=basis)
+
+
+def compare_carry(coin: str = "BTC", limit: int = 1000, fee_bps: float = 5.0,
+                  flip: bool = False) -> dict:
+    """
+    Fetch funding + perp + spot for a coin and run BOTH the idealized and the
+    basis-aware carry, so the Sharpe gap (the cost of the perfect-hedge
+    assumption) is explicit. Returns {"idealized": CarryResult, "basis": CarryResult}.
+    """
+    f = funding_history(coin, limit=limit)
+    perp = perp_price_history(coin, limit=limit + 200)
+    spot = spot_price_history(coin, limit=limit + 200)
+    return {
+        "idealized": carry_backtest(f, fee_bps=fee_bps, flip=flip),
+        "basis": basis_carry_backtest(f, perp, spot, fee_bps=fee_bps, flip=flip),
+    }

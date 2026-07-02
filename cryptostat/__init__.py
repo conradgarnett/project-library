@@ -19,14 +19,18 @@ from .common.data import fetch_ohlcv, price_panel, DEFAULT_UNIVERSE
 from .common.metrics import performance_summary, sharpe, max_drawdown, equity_curve
 from .funding.data import (
     funding_history, funding_now, OKX_FUNDING_INTERVAL_H, FUNDING_INTERVALS_PER_YEAR,
+    perp_price_history, spot_price_history,
 )
-from .funding.carry import carry_backtest, CarryResult
+from .funding.carry import (
+    carry_backtest, basis_carry_backtest, compare_carry, CarryResult,
+)
 
 __all__ = [
     "fetch_ohlcv", "price_panel", "DEFAULT_UNIVERSE",
     "performance_summary", "sharpe", "max_drawdown", "equity_curve",
     "funding_history", "funding_now", "OKX_FUNDING_INTERVAL_H",
-    "FUNDING_INTERVALS_PER_YEAR", "carry_backtest", "CarryResult",
+    "FUNDING_INTERVALS_PER_YEAR", "perp_price_history", "spot_price_history",
+    "carry_backtest", "basis_carry_backtest", "compare_carry", "CarryResult",
 ]
 
 __version__ = "0.1.0"
