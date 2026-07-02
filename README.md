@@ -26,8 +26,11 @@ services, fully reproducible.
 | `optlib/scenario.py` | Spot × vol × time scenario/risk grid for any position — P&L and all Greeks, with heatmaps |
 | `optlib/strategy.py` | Multi-leg strategy analyzer: net premium, aggregate Greeks, payoff/P&L, breakevens, max profit/loss + ready-made spreads/straddle/strangle/condor/covered-call/protective-put |
 | `optlib/compare.py` | Four-way (BS / MC / binomial / PDE) comparison tables for price, Greeks, and convergence |
+| `optlib/exchanges.py` | Multi-venue live quotes across five free USD exchanges (Coinbase, Kraken, Bitstamp, Gemini, Bitfinex) |
+| `optlib/arbgraph.py` | **Cross-venue triangular / cyclic arbitrage scanner** — builds a live rate graph and finds profitable loops net of fees (the no-arbitrage complement to the pricing model) |
 | `optlib/visualize.py` | Greek curves, vol smile & surface, MC/model convergence, payoff/P&L, sample paths, strategy P&L, implied density, hedged-P&L-vs-realized, model smiles |
 | `cli.py` | Command-line calculator |
+| `arb_scan.py` | CLI for the cross-venue arbitrage scanner |
 | `demo.py` | End-to-end report + figure generation |
 | `tests/test_pricing.py` | Correctness tests (reference prices, parity, FD Greek checks, IV round-trip, MC-in-CI) |
 
@@ -40,7 +43,7 @@ services, fully reproducible.
 pip install -r requirements.txt      # numpy, scipy, matplotlib, pandas (+ optional yfinance)
 
 python demo.py                       # prints everything + writes figures/
-python tests/run_all.py              # 44 tests, no pytest needed (or: python -m pytest -q)
+python tests/run_all.py              # 48 tests, no pytest needed (or: python -m pytest -q)
 ```
 
 ### Command-line calculator
@@ -241,6 +244,31 @@ grid.frame("pnl")               # P&L as a (vols × spots) DataFrame
 `figures/scenario_heatmap.png` shows the classic short-gamma/short-vega iron
 condor profile: profit near the money at low vol, losses on big moves or vol spikes.
 
+## Cross-venue arbitrage scanner
+
+Options pricing rests on the **no-arbitrage** principle (put-call parity, no free
+lunch). This scanner measures how well real markets actually obey it: it pulls the
+*same* crypto asset's live quotes from five free USD exchanges and searches for
+profitable conversion loops `USD → … → USD`, where each leg can execute on
+whichever venue is best — the classic Bellman-Ford negative-cycle view of
+arbitrage. A 2-leg loop is a cross-exchange arb; a 3-leg loop is triangular.
+
+```python
+from optlib.arbgraph import scan
+r = scan(assets=("USD", "BTC", "ETH", "SOL", "LTC"), max_len=4)
+r["best_multi"]   # best loop across all venues (each leg on its best exchange)
+r["best_single"]  # best loop confined to one venue
+```
+
+```bash
+python arb_scan.py                       # live scan across five venues
+```
+
+Using multiple venues widens the best loop and often reveals a small positive
+*gross* edge — but each leg pays a taker fee, so after fees profitable loops are
+essentially nonexistent between major venues. That is the no-arbitrage principle
+holding up empirically: the same assumption the pricing model is built on.
+
 ## Figures (generated into `figures/`)
 
 - `greeks_vs_spot.png` — price + all five Greeks vs spot
@@ -283,4 +311,4 @@ The test suite (`tests/`) checks, among other things:
 - SVI fits a smile tightly and Merton calibration recovers known parameters
 - scenario grid: long-straddle gains on moves/vol, ATM theta bleed over time
 
-All 44 tests pass (`python tests/run_all.py`).
+All 48 tests pass (`python tests/run_all.py`).
