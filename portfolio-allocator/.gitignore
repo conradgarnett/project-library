@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Cached market data (regenerate via portlib.data). Charts in figures/ are committed.
+data/
+
+# Unrelated files present in this working dir but not part of this project.
+node_modules/
+quant-mind/
+my-vault/
+earnings_vrp/
