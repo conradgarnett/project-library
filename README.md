@@ -31,10 +31,10 @@ funding.data.funding_history   →   funding.carry.carry_backtest   →   metric
 ```
 cryptostat/
   common/    data.py  stats.py  metrics.py     # shared foundation
-  funding/   data.py  carry.py                 # funding data + carry backtest
-scripts/     funding_carry.py                  # multi-coin carry report
-tests/       run_all.py + test_funding.py
-results/     funding/carry.txt                 # committed example output
+  funding/   data.py  carry.py  portfolio.py   # funding data + carry + portfolio
+scripts/     funding_carry.py  funding_portfolio.py
+tests/       run_all.py + test_funding.py + test_portfolio.py
+results/     funding/carry.txt  funding/portfolio.txt
 ```
 
 ## Quick start
@@ -98,11 +98,30 @@ Still **not** modeled (would lower it further):
 
 This is a **research/backtest tool, not a live trader** — no broker or margin engine.
 
+## Portfolio of carries (`funding/portfolio.py`)
+
+A single-coin carry is thin and noisy. Running it across several coins and
+combining them with a risk budget diversifies away idiosyncratic basis/funding
+noise, which **raises the risk-adjusted return honestly** — it's built on the
+basis-aware returns and weights use trailing data only (no look-ahead).
+
+```python
+from cryptostat.funding.portfolio import carry_returns_panel, carry_portfolio
+panel = carry_returns_panel(["BTC", "ETH", "SOL", "DOGE", "XRP", "LTC"])
+carry_portfolio(panel, scheme="inverse_vol").summary()
+```
+
+Result (`results/funding/portfolio.txt`): combining six coins lifts the
+basis-aware Sharpe well above the average standalone coin — **avg standalone ≈ 2.6
+→ portfolio ≈ 4.0 (equal weight) / ≈ 5.5 (inverse-vol)**, a diversification ratio
+of ~2. Inverse-vol (risk-balanced) beats equal weight because it down-weights the
+noisiest coins. This is a genuine diversification gain, not a modeling shortcut.
+
 ### Next steps
-- **Done:** basis-aware backtest using real perp+spot prices (`basis_carry_backtest`).
+- **Done:** basis-aware backtest (`basis_carry_backtest`) and portfolio of
+  carries (`carry_portfolio`).
 - Model perp-leg **margin & liquidation** at a chosen leverage.
-- **Portfolio of carries** across coins with a risk budget.
-- Charts: funding over time, carry equity curve, funding-regime shifts.
+- Charts: funding over time, portfolio equity curve, funding-regime shifts.
 
 ## Tests
 

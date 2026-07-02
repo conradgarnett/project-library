@@ -24,6 +24,9 @@ from .funding.data import (
 from .funding.carry import (
     carry_backtest, basis_carry_backtest, compare_carry, CarryResult,
 )
+from .funding.portfolio import (
+    carry_returns_panel, carry_portfolio, PortfolioResult,
+)
 
 __all__ = [
     "fetch_ohlcv", "price_panel", "DEFAULT_UNIVERSE",
@@ -31,6 +34,7 @@ __all__ = [
     "funding_history", "funding_now", "OKX_FUNDING_INTERVAL_H",
     "FUNDING_INTERVALS_PER_YEAR", "perp_price_history", "spot_price_history",
     "carry_backtest", "basis_carry_backtest", "compare_carry", "CarryResult",
+    "carry_returns_panel", "carry_portfolio", "PortfolioResult",
 ]
 
 __version__ = "0.1.0"
