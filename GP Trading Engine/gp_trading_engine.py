@@ -176,11 +176,19 @@ class FeatureEngine:
 
         features = features.replace([np.inf, -np.inf], np.nan).dropna()
 
-        print("Normalizing features with z-scores...")
+        # Causal z-score: normalize each feature using only statistics available
+        # up to the *prior* bar (expanding window, then shift(1)). The previous
+        # implementation used the global mean/std over the entire series, which
+        # leaks future information into past observations (look-ahead bias) and
+        # inflates every backtest run through this path.
+        print("Normalizing features with causal (expanding) z-scores...")
+        min_periods = 60
+        normalized = pd.DataFrame(index=features.index)
         for col in features.columns:
-            mean = features[col].mean()
-            std = features[col].std()
-            features[col] = (features[col] - mean) / std if std > 1e-8 else 0.0
+            past_mean = features[col].expanding(min_periods=min_periods).mean().shift(1)
+            past_std = features[col].expanding(min_periods=min_periods).std().shift(1)
+            normalized[col] = (features[col] - past_mean) / past_std.where(past_std > 1e-8)
+        features = normalized.replace([np.inf, -np.inf], np.nan).dropna()
 
         print(f"Built {len(features.columns)} features with {len(features)} samples")
         return features

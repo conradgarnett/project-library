@@ -1,0 +1,34 @@
+==================================================================
+ AAVE-USD  vs  ADA-USD
+==================================================================
+
+COINTEGRATION (screen)
+  correlation      0.8078
+  Engle-Granger    -3.1330  (cointegrated=False)
+  hedge ratio beta 0.8373
+  half-life        33.8 days
+
+IN-SAMPLE BACKTEST (optimistic — fits and trades same data)
+  Sharpe -0.25 | ann.return -13.42% | maxDD -40.86% | trades 41
+
+WALK-FORWARD (honest — train 180d / test 45d rolling)
+  Walk-forward: 12 folds, 540 OOS periods
+    in-sample Sharpe (optimistic) :   1.89
+    OUT-OF-SAMPLE Sharpe (honest)  :   1.07
+    overfitting gap                :   0.82
+    OOS ann.return 22.52% | maxDD -14.04% | hit 54.2%
+
+PER-FOLD OUT-OF-SAMPLE
+test_start   test_end    beta  train_sharpe  test_sharpe  n_trades
+2024-12-29 2025-02-11 211.163         1.012        2.735         1
+2025-02-12 2025-03-28 223.500         2.254        3.743         1
+2025-03-29 2025-05-12 209.719         3.291        0.000         0
+2025-05-13 2025-06-26 304.544         3.877        1.051         1
+2025-06-27 2025-08-10 297.419         2.475        2.049         1
+2025-08-11 2025-09-24 152.106         0.000        0.000         0
+2025-09-25 2025-11-08 327.691         0.000        0.000         0
+2025-11-09 2025-12-23 213.724         2.868        0.000         0
+2025-12-24 2026-02-06 273.541         1.361        0.000         0
+2026-02-07 2026-03-23 285.101         3.839        0.000         0
+2026-03-24 2026-05-07 287.989         2.154       -1.150         1
+2026-05-08 2026-06-21 416.408         2.605        0.000         0

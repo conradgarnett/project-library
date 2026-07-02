@@ -1,0 +1,34 @@
+==================================================================
+ AAVE-USD  vs  LINK-USD
+==================================================================
+
+COINTEGRATION (screen)
+  correlation      0.8049
+  Engle-Granger    -3.2385  (cointegrated=False)
+  hedge ratio beta 1.1112
+  half-life        30.3 days
+
+IN-SAMPLE BACKTEST (optimistic — fits and trades same data)
+  Sharpe -0.64 | ann.return -16.73% | maxDD -39.82% | trades 43
+
+WALK-FORWARD (honest — train 180d / test 45d rolling)
+  Walk-forward: 12 folds, 540 OOS periods
+    in-sample Sharpe (optimistic) :   1.81
+    OUT-OF-SAMPLE Sharpe (honest)  :  -0.18
+    overfitting gap                :   1.99
+    OOS ann.return -5.68% | maxDD -26.28% | hit 55.5%
+
+PER-FOLD OUT-OF-SAMPLE
+test_start   test_end   beta  train_sharpe  test_sharpe  n_trades
+2024-12-29 2025-02-11 13.165         3.300        5.673         2
+2025-02-12 2025-03-28 13.416         1.486        0.000         0
+2025-03-29 2025-05-12 13.322         1.512        0.000         0
+2025-05-13 2025-06-26 14.591         1.447       -2.225         1
+2025-06-27 2025-08-10 12.551         0.983        3.840         2
+2025-08-11 2025-09-24 14.202         0.000        0.000         0
+2025-09-25 2025-11-08  9.550         0.000        0.000         0
+2025-11-09 2025-12-23  4.941         1.232       -2.865         1
+2025-12-24 2026-02-06  9.755         2.414        0.000         0
+2026-02-07 2026-03-23 12.691         2.435        0.000         0
+2026-03-24 2026-05-07 12.780         1.216       -3.425         1
+2026-05-08 2026-06-21 15.694         1.771        3.902         1

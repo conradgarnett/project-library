@@ -63,3 +63,29 @@ With only 6 features, simple operators, and a search that explicitly maximizes
 Sharpe/Calmar, results are **prone to overfitting**. The walk-forward and Monte
 Carlo components exist to push back on that — treat any in-sample Sharpe
 skeptically until it survives genuinely fresh data.
+
+## Fix log
+
+Ongoing work to make the engine methodologically honest. Each entry records a
+specific edit; commits on the `gp-trading-engine` branch.
+
+- **Fix #1 — causal feature normalization.** `FeatureEngine.build_features`
+  previously z-scored each feature using the global mean/std over the *entire*
+  series, leaking future statistics into past bars (look-ahead bias) and
+  inflating every run through the `search_until_sharpe` / `GPTradingEngine`
+  path. Replaced with an expanding-window z-score shifted by one bar, so each
+  observation is normalized using only prior data. Verified leak-free
+  (perturbing future bars no longer changes past normalized features).
+
+- **Fix #2 — honest, fixed-budget search (rewrote `search_until_sharpe.py`).**
+  The old runner evolved on the *full* dataset (no train/test split) and stopped
+  the instant **in-sample** Sharpe crossed 1.0 — a selection-bias engine that
+  fishes until it gets a lucky number and never checks out-of-sample data.
+  Rewritten to: (1) split data chronologically into **train / validation /
+  holdout**; (2) optimize the GP on **train** only; (3) select the champion by
+  **validation** Sharpe (out-of-sample during the search); (4) score the single
+  champion **once** on the locked **holdout**; (5) run a **fixed budget** with no
+  early stopping and report the full distribution of out-of-sample scores plus
+  the total number of strategies evaluated (so a lucky maximum is visible).
+  It no longer seeds from or writes to `strategy_vault.json` (avoiding the
+  vault "ratchet"); provenance goes to `search_results.json`.

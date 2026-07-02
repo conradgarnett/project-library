@@ -1,0 +1,58 @@
+CRYPTO STATISTICAL ARBITRAGE — BATCH RESULTS SUMMARY
+==================================================================
+Generated : 2026-07-01 21:26 UTC
+Universe  : 18 Coinbase USD pairs, 730d daily
+Pairs run : 10 (top candidates by cointegration)
+Costs     : 10 bps per trade
+Signal    : baseline z-score (entry 2.0 / exit 0.5)
+
+METHOD
+  Each pair is (1) backtested in-sample — parameters fit on the
+  same data it trades, the OPTIMISTIC number — and (2) walk-forward
+  validated — hedge ratio and z-score stats re-estimated on a rolling
+  training window and traded only on the next unseen window, the
+  HONEST number. The gap between them is the overfitting tax.
+
+RESULTS (sorted by out-of-sample Sharpe)
+             pair  n_days  half_life  is_sharpe  oos_sharpe    gap  oos_ann_return  oos_maxdd
+  LTC-USD/XLM-USD     730      9.174      0.287       1.531 -1.243           0.519     -0.139
+  ETC-USD/UNI-USD     730     18.470      0.467       1.440 -0.973           0.167     -0.107
+ AAVE-USD/LTC-USD     730     17.672      0.769       1.369 -0.600           0.315     -0.143
+ AAVE-USD/BTC-USD     730     25.345     -0.448       1.324 -1.772           0.183     -0.116
+ AAVE-USD/ADA-USD     730     33.762     -0.247       1.069 -1.316           0.225     -0.140
+ LTC-USD/LINK-USD     730     14.269      1.260       0.898  0.362           0.184     -0.165
+ALGO-USD/AAVE-USD     730     40.557     -0.187       0.565 -0.752           0.102     -0.185
+  ADA-USD/LTC-USD     730     11.777      0.150       0.152 -0.002           0.008     -0.202
+AAVE-USD/LINK-USD     730     30.281     -0.636      -0.175 -0.461          -0.057     -0.263
+ AAVE-USD/BCH-USD     730     33.953     -0.427      -1.032  0.605          -0.234     -0.383
+
+AGGREGATE
+  pairs with POSITIVE out-of-sample Sharpe : 8 / 10
+  mean in-sample Sharpe                    : 0.10
+  mean OUT-OF-SAMPLE Sharpe                 : 0.71
+  mean overfitting gap                     : -0.62
+
+INTERPRETATION
+  8 of 10 pairs show a POSITIVE out-of-sample Sharpe
+  (mean OOS Sharpe 0.71). Encouraging on its face — but read
+  it with heavy skepticism, for two reasons:
+
+  1. SELECTION BIAS. These pairs were chosen by screening the WHOLE
+     history for cointegration, so the pair choice itself peeks at the
+     future. Screening ~95 pairs and keeping the best 10 also invites
+     multiple-testing luck. The single most important next step is to
+     make pair SELECTION walk-forward too (choose pairs using only the
+     training window), which typically knocks these numbers down.
+  2. SMALL SAMPLE. ~2 years of daily data is a handful of folds and a
+     few dozen trades per pair — wide error bars on every Sharpe here.
+
+  Where in-sample beats out-of-sample, that gap is the overfitting tax;
+  where OOS beats in-sample, it is usually because the walk-forward
+  re-estimates the hedge ratio each window while the in-sample run holds
+  one static (and drifting) beta. The unstable per-fold betas in the
+  per-pair reports show how much these relationships move.
+
+  Treat this as the STARTING POINT to beat, not a finished strategy. The
+  research tasks in the README (walk-forward pair selection, half-life
+  exits, Kalman dynamic hedge ratio, portfolio of pairs) should each be
+  judged ONLY by whether they raise the out-of-sample Sharpe.

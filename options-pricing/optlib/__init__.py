@@ -53,6 +53,62 @@ from .strategy import (
     Strategy,
     Leg,
 )
+from .greeks_advanced import (
+    advanced_greeks,
+    AdvancedGreeks,
+)
+from .finite_difference import (
+    crank_nicolson,
+    fd_price,
+)
+from .exotic import (
+    digital_price,
+    geometric_asian_price,
+    asian_price_mc,
+    barrier_price,
+    barrier_price_mc,
+    lookback_price_mc,
+)
+from .models import (
+    merton_jump_price,
+    merton_jump_price_mc,
+    heston_price_mc,
+)
+from .implied import (
+    realized_volatility,
+    implied_prob_itm,
+    risk_neutral_density,
+    variance_risk_premium,
+    breakeven_move,
+    delta_hedge_pnl,
+)
+from .scenario import (
+    scenario_grid,
+    scenario_summary,
+    ScenarioResult,
+)
+from .market import (
+    fetch_option_chain,
+    synthetic_smile,
+    calibrate_svi,
+    calibrate_merton,
+    calibration_rmse,
+    SVIParams,
+    MertonParams,
+)
+from .exchanges import (
+    daily_close_panel,
+    live_quote_panel,
+    USD_EXCHANGES,
+    TAKER_FEE_BPS,
+)
+from .arbgraph import (
+    build_edges,
+    find_cycles,
+    scan as scan_triangular,
+    Edge,
+    Cycle,
+)
 
 __all__ = [
     "BlackScholes",
@@ -69,6 +125,44 @@ __all__ = [
     "binomial_greeks",
     "Strategy",
     "Leg",
+    "advanced_greeks",
+    "AdvancedGreeks",
+    "crank_nicolson",
+    "fd_price",
+    "digital_price",
+    "geometric_asian_price",
+    "asian_price_mc",
+    "barrier_price",
+    "barrier_price_mc",
+    "lookback_price_mc",
+    "merton_jump_price",
+    "merton_jump_price_mc",
+    "heston_price_mc",
+    "realized_volatility",
+    "implied_prob_itm",
+    "risk_neutral_density",
+    "variance_risk_premium",
+    "breakeven_move",
+    "delta_hedge_pnl",
+    "scenario_grid",
+    "scenario_summary",
+    "ScenarioResult",
+    "fetch_option_chain",
+    "synthetic_smile",
+    "calibrate_svi",
+    "calibrate_merton",
+    "calibration_rmse",
+    "SVIParams",
+    "MertonParams",
+    "daily_close_panel",
+    "live_quote_panel",
+    "USD_EXCHANGES",
+    "TAKER_FEE_BPS",
+    "build_edges",
+    "find_cycles",
+    "scan_triangular",
+    "Edge",
+    "Cycle",
 ]
 
 __version__ = "1.0.0"

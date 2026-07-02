@@ -10,8 +10,8 @@ const SERVER_URL = 'http://localhost:8000';
 
 function startServer() {
   const python     = '/opt/miniconda3/bin/python3';
-  const serverPath = '/Users/conradgarnett/bloomberg/Delta Terminal/server.py';
-  const serverCwd  = '/Users/conradgarnett/bloomberg/Delta Terminal';
+  const serverPath = '/Users/conradgarnett/bloomberg/server.py';
+  const serverCwd  = '/Users/conradgarnett/bloomberg';
   serverProcess = spawn(python, ['-u', serverPath], {
     cwd: serverCwd,
     env: { ...process.env, PYTHONUNBUFFERED: '1' },
@@ -63,7 +63,7 @@ function createWindow() {
       waitForServer(err => {
         if (!win) return;
         if (err) {
-          win.loadURL('data:text/html,<body style="font-family:monospace;padding:40px;background:%23f5f1e6"><h2 style="color:%23c81d1d">Backend failed to start</h2><p>Try running python3 ~/bloomberg/&quot;Delta Terminal&quot;/server.py in Terminal.</p></body>');
+          win.loadURL('data:text/html,<body style="font-family:monospace;padding:40px;background:%23f5f1e6"><h2 style="color:%23c81d1d">Backend failed to start</h2><p>Try running python3 ~/bloomberg/server.py in Terminal.</p></body>');
           return;
         }
         win.loadURL(SERVER_URL);
