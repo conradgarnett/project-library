@@ -54,32 +54,55 @@ print(cs.carry_backtest(h, flip=False).summary())  # delta-neutral carry stats
 
 ## Method
 
-- **Naive long-basis** (`flip=False`): always long-spot / short-perp. Collect
-  funding when it's positive (the usual state); *pay* it when it flips negative.
+Two backtest models (annualized over 1095 eight-hour intervals per year):
+
+- **Idealized** (`carry_backtest`): assumes a perfect hedge, so the per-interval
+  return is just the funding collected. Optimistic.
+- **Basis-aware** (`basis_carry_backtest`): the honest version. Uses the *actual*
+  OKX perp and spot price paths, so the return includes the real price-leg P&L:
+  `return = funding − Δ(basis)`, where `basis = perp/spot − 1`. `compare_carry`
+  runs both side by side.
+
+Position modes (both models):
+- **Naive long-basis** (`flip=False`): always long-spot / short-perp — collect
+  funding when positive, *pay* when it flips negative.
 - **Flip** (`flip=True`): switch sides when funding turns negative to always
   collect its magnitude, paying a rebalance fee on each switch.
-- Per-interval return ≈ funding collected (the delta-neutral hedge zeroes price
-  P&L), annualized over 1095 eight-hour intervals per year.
 
 ## Honest findings & caveats
 
 From `results/funding/carry.txt` (current, calm market): funding is modest —
-BTC ≈ +1.7%, ETH ≈ +2.1%, DOGE ≈ +4.2% annualized (memecoins draw crowded
+BTC ≈ +1.6%, ETH ≈ +2.1%, DOGE ≈ +4.2% annualized (memecoins draw crowded
 longs) — so carry yields are low single digits. They run far richer in bull
 markets.
 
-- The reported **Sharpes look huge (8–20) only because the model assumes a
-  perfect hedge** — a near-zero-variance funding drip. That number **excludes the
-  real risks**: exchange/counterparty failure (FTX), perp-leg liquidation on
-  sharp moves, and spot-perp basis drift.
-- The naive long-basis version beats `flip` when funding is mostly positive,
-  because flipping on every sign change churns fees.
-- **Research/backtest tool, not a live trader** — no broker or margin engine.
+**The basis-aware model is the headline result.** The idealized (funding-only)
+Sharpe looks huge, but pricing the *real* perp/spot legs collapses it:
+
+| coin | idealized Sharpe | basis-aware Sharpe | basis vol |
+| --- | --- | --- | --- |
+| BTC | 7.7 | 3.2 | 0.9 bps |
+| ETH | 9.2 | 3.9 | 1.0 bps |
+| DOGE | 20.0 | 4.8 | 1.7 bps |
+| XRP | 5.7 | 0.8 | 4.0 bps |
+
+Even though the perp/spot basis is *tiny* (sub-1 to a few bps, same venue), its
+interval-to-interval **changes** are large relative to the minuscule 8-hour
+funding drip — so they dominate the return variance and cut the Sharpe roughly
+2–7×. The idealized number was a mirage; the basis-aware one is honest.
+
+Still **not** modeled (would lower it further):
+- **perp-leg liquidation** on sharp moves (margin management),
+- **exchange / counterparty failure** (e.g. FTX),
+- **cross-venue hedging** would add a much larger, noisier basis than same-venue.
+
+This is a **research/backtest tool, not a live trader** — no broker or margin engine.
 
 ### Next steps
-- Add basis drift + margin/liquidation modeling so the Sharpe reflects real risk.
-- Combine the spot leg (from `common/data.py`) to track the actual basis.
-- Portfolio of carries across coins with a risk budget.
+- **Done:** basis-aware backtest using real perp+spot prices (`basis_carry_backtest`).
+- Model perp-leg **margin & liquidation** at a chosen leverage.
+- **Portfolio of carries** across coins with a risk budget.
+- Charts: funding over time, carry equity curve, funding-regime shifts.
 
 ## Tests
 

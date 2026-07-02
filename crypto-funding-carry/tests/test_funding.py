@@ -10,12 +10,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from cryptostat.funding.carry import carry_backtest  # noqa: E402
+from cryptostat.funding.carry import (  # noqa: E402
+    basis_carry_backtest,
+    carry_backtest,
+)
 
 
 def _series(rates):
     idx = pd.date_range("2024-01-01", periods=len(rates), freq="8h", tz="UTC")
     return pd.Series(rates, index=idx, name="funding_rate")
+
+
+def _prices(n, perp_over_spot):
+    """Flat spot at 100; perp = spot*(1+basis) with a given basis path (fraction)."""
+    idx = pd.date_range("2024-01-01", periods=n, freq="8h", tz="UTC")
+    spot = pd.Series(100.0, index=idx)
+    perp = spot * (1.0 + np.asarray(perp_over_spot))
+    return perp, spot
 
 
 def test_positive_funding_earns_carry():
@@ -48,6 +59,31 @@ def test_fees_reduce_flip_returns():
     lo = carry_backtest(f, fee_bps=1.0, flip=True).ann_yield_simple
     hi = carry_backtest(f, fee_bps=20.0, flip=True).ann_yield_simple
     assert hi < lo
+
+
+def test_basis_aware_matches_idealized_when_basis_constant():
+    # Constant basis => Δbasis = 0 => basis-aware return == idealized funding.
+    f = _series([1e-4] * 200)
+    perp, spot = _prices(200, [0.0005] * 200)      # flat 5 bps basis
+    ideal = carry_backtest(f, fee_bps=1.0)
+    basis = basis_carry_backtest(f, perp, spot, fee_bps=1.0)
+    assert abs(ideal.ann_yield_simple - basis.ann_yield_simple) < 1e-6
+    assert basis.basis_aware and abs(basis.basis_mean_bps - 5.0) < 1e-6
+
+
+def test_basis_noise_adds_variance_and_lowers_sharpe():
+    # Funding with mild variance (finite idealized Sharpe); a noisy basis path
+    # adds return variance on top, so basis-aware std is higher and Sharpe lower.
+    rng = np.random.default_rng(0)
+    n = 400
+    f = _series(1e-4 + rng.standard_normal(n) * 2e-5)   # positive funding, small vol
+    noisy = 0.0005 + rng.standard_normal(n) * 1e-4      # basis wobbles ~1 bp/interval
+    perp, spot = _prices(n, noisy)
+    ideal = carry_backtest(f, fee_bps=0.0)
+    basis = basis_carry_backtest(f, perp, spot, fee_bps=0.0)
+    assert basis.returns.std() > ideal.returns.std()    # basis changes add variance
+    assert basis.sharpe < ideal.sharpe
+    assert basis.basis_vol_bps > 0
 
 
 def test_live_okx_optional():

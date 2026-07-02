@@ -1,26 +1,31 @@
 FUNDING-RATE CARRY (OKX perpetual swaps)
-============================================================
-Generated : 2026-07-02 02:15 UTC
-History   : up to 700 × 8h funding settlements
-Fee       : 5 bps (setup / per side-flip)
+================================================================
+Generated : 2026-07-02 02:58 UTC
+History   : up to 700 x 8h funding settlements
+Fee       : 5 bps (setup)
 
-      intervals  mean_funding_ann  carry_yield_naive  sharpe_naive  maxdd_naive  carry_yield_flip  sharpe_flip
-coin                                                                                                          
-BTC         300            0.0173             0.0155        8.8321      -0.0013           -0.1109     -14.2364
-ETH         281            0.0211             0.0191        9.1526      -0.0015           -0.1040     -13.3711
-SOL         281            0.0033             0.0014        0.5245      -0.0031           -0.1539     -17.8479
-DOGE        281            0.0422             0.0402       20.0184      -0.0004           -0.1027     -12.9450
-XRP         300            0.0133             0.0114        4.2438      -0.0025           -0.1287     -15.4001
+      intervals  mean_funding_ann  yield_ideal  sharpe_ideal  yield_basis  sharpe_basis  basis_vol_bps  maxdd_basis
+coin                                                                                                               
+BTC         281            0.0161       0.0142        7.7489       0.0131        3.2119         0.8731      -0.0015
+ETH         281            0.0211       0.0191        9.1526       0.0189        3.9271         1.0010      -0.0016
+SOL         281            0.0033       0.0014        0.5245       0.0006        0.0732         1.6890      -0.0034
+DOGE        281            0.0422       0.0402       20.0184       0.0399        4.8379         1.7273      -0.0009
+XRP         281            0.0171       0.0152        5.7087       0.0148        0.8451         3.9867      -0.0035
 
 STRATEGY
   Delta-neutral: long spot + short perp collects funding when it is
-  positive (longs pay shorts). 'naive' always holds that side (and pays
-  when funding turns negative); 'flip' switches sides to always collect.
+  positive (longs pay shorts).
 
-HONEST CAVEATS
-  * Assumes a perfect spot/perp hedge, so the high Sharpe reflects an
-    idealized return stream (steady funding drip, ~zero price variance).
-    It EXCLUDES the real risks: exchange/counterparty failure (FTX),
-    perp-leg liquidation on sharp moves, and spot-perp basis drift.
-  * Yields track the funding regime: rich in bull markets, thin or
-    negative in calm/bearish ones (see mean_funding_ann per coin).
+IDEALIZED vs BASIS-AWARE
+  idealized: return = funding only (assumes a perfect hedge).
+  basis-aware: return = funding + real price-leg P&L (= -d(perp/spot-1)),
+  using actual OKX perp & spot prices at each funding time.
+  The basis LEVEL is tiny (single-digit bps, same venue) but its
+  interval-to-interval CHANGES are large relative to the minuscule 8h
+  funding drip, so the honest (basis-aware) Sharpe is much lower than
+  the idealized one. That gap is the cost of the perfect-hedge assumption.
+
+STILL NOT MODELED (real risks that would lower this further)
+  * perp-leg liquidation on sharp moves (margin management)
+  * exchange / counterparty failure (e.g. FTX)
+  * cross-venue hedging would add a much larger, noisier basis
