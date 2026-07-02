@@ -1,18 +1,19 @@
-# Crypto Quant Toolkit
+# Crypto Arbitrage Toolkit
 
-A multi-strategy crypto quant research toolkit, organized by strategy family. It
-runs entirely on **free, key-less exchange APIs** (Coinbase, Kraken, Bitstamp,
-Gemini, Bitfinex, OKX) — crypto is used deliberately because its market data is
-free and deep, unlike equities where good history costs hundreds to thousands of
-dollars.
+A crypto arbitrage research toolkit, organized by strategy family. It runs
+entirely on **free, key-less exchange APIs** (Coinbase, Kraken, Bitstamp, Gemini,
+Bitfinex) — crypto is used deliberately because its market data is free and deep,
+unlike equities where good history costs hundreds to thousands of dollars.
 
-Three strategy families, one shared foundation:
+Two arbitrage families, one shared foundation:
 
 | Subpackage | Strategy | Idea |
 | --- | --- | --- |
 | `statarb/` | **Statistical arbitrage** | trade the mean-reverting spread of a cointegrated coin pair |
 | `crossvenue/` | **Cross-venue & triangular arbitrage** | exploit price gaps of one asset across exchanges, and cyclic (triangular) loops |
-| `funding/` | **Funding-rate carry** | harvest perpetual-swap funding with a delta-neutral position |
+
+> A third crypto strategy, **funding-rate carry** (perpetual-futures), is a
+> separate sibling project on the `crypto-funding-carry` branch.
 
 > **Scope.** The plumbing — data, statistics, backtesting, walk-forward
 > validation, metrics — is built and tested. The *trading edge* (signal design)
@@ -25,10 +26,9 @@ cryptostat/
   common/       data.py  stats.py  metrics.py         # shared foundation
   statarb/      pairs.py  signals.py  backtest.py  walkforward.py
   crossvenue/   exchanges.py  crossexchange.py  arbgraph.py
-  funding/      data.py  carry.py
-scripts/        01..08  (fetch → screen → backtest → walk-forward → batch →
-                         cross-exchange → triangular → funding carry)
-tests/          run_all.py + one suite per module   (30 tests, no pytest needed)
+scripts/        01..07  (fetch → screen → backtest → walk-forward → batch →
+                         cross-exchange → triangular)
+tests/          run_all.py + one suite per module   (25 tests, no pytest needed)
 results/        committed example outputs
 ```
 
@@ -41,9 +41,8 @@ python scripts/01_fetch_universe.py                          # cache ~2y daily p
 python scripts/02_screen_pairs.py                            # rank cointegrated pairs
 python scripts/04_walk_forward.py  --a MATIC-USD --b ADA-USD # honest out-of-sample stat-arb
 python scripts/07_triangular.py                              # cross-venue triangular scan
-python scripts/08_funding_carry.py                           # funding-rate carry
 
-python tests/run_all.py                # 30 tests
+python tests/run_all.py                # 25 tests
 ```
 
 ```python
@@ -51,7 +50,6 @@ import cryptostat as cs                # everything re-exported at top level
 panel = cs.price_panel(["BTC-USD", "ETH-USD", "LTC-USD"], days=730)
 cs.screen_pairs(panel)                 # statistical arbitrage
 cs.scan_triangular()                   # cross-venue triangular arbitrage
-cs.carry_backtest(cs.funding_history("BTC"))   # funding-rate carry
 ```
 
 ---
@@ -89,26 +87,9 @@ each extra leg adds a fee (so longer loops net *worse*), and cross-venue legs ne
 slow transfers — **0 executable loops after fees.** Markets are efficient; the
 value is measuring exactly why.
 
-## 3. Funding-rate carry (`funding/`)
-
-Perpetual swaps never expire, so a **funding rate** paid every 8 hours tethers the
-perp to spot: when the crowd is long, longs pay shorts. Hold **long spot + short
-perp** and your price exposure cancels while you *collect that funding* — a
-market-neutral yield. Unlike the arbitrage above, this is a **risk premium**, not
-a fleeting mispricing, so it persists and isn't latency-bound.
-
-`funding/data.py` pulls OKX funding history (free); `carry.py` backtests the
-delta-neutral carry (naive long-basis, or `flip` to always collect).
-`scripts/08_funding_carry.py` writes `results/funding/`.
-
-**Honest finding:** in the current calm regime, funding is modest — BTC ≈ +1.7%,
-ETH ≈ +2.1%, DOGE ≈ +4.2% annualized (memecoins draw crowded longs) — so carry
-yields are low single digits (they run far richer in bull markets). Reported
-Sharpes look huge (8–20) **only because the model assumes a perfect hedge**, i.e.
-a near-zero-variance funding drip; that number excludes the real risks —
-exchange/counterparty failure (FTX), perp-leg liquidation on sharp moves, and
-basis drift. The naive long-basis version beats `flip` here because flipping on
-every funding sign-change churns fees.
+> **Funding-rate carry** — the third crypto strategy (perpetual-futures) — lives
+> on the separate `crypto-funding-carry` branch, since it's a risk-premium
+> strategy rather than arbitrage.
 
 ---
 
@@ -122,10 +103,8 @@ Each is a self-contained experiment — implement, backtest, keep only what surv
    pairs on the training window only) to kill selection bias.
 2. **Dynamic hedge ratio (Kalman filter)** for the stat-arb spread.
 3. **Half-life-aware signals & time-stops.**
-4. **Portfolio of pairs / portfolio of carry** with a risk budget.
-5. **Realistic funding carry:** add basis drift, margin/liquidation modeling, and
-   exchange-risk haircuts so the Sharpe reflects real risk, not the ideal hedge.
-6. **Cross-venue execution simulator** with latency and transfer times.
+4. **Portfolio of pairs** with a risk budget, instead of one pair at a time.
+5. **Cross-venue execution simulator** with latency and transfer times.
 
 ## Honest caveats
 
@@ -133,14 +112,11 @@ Each is a self-contained experiment — implement, backtest, keep only what surv
   the raw spread — reconcile these (log-spread trading).
 - Multiple-testing bias: screening hundreds of pairs surfaces some cointegrated
   by luck. Out-of-sample validation is not optional.
-- Funding carry Sharpes assume a perfect hedge and ignore counterparty/liquidation
-  risk — treat them as idealized.
 - This is a **research/backtest toolkit, not a live trader** — no broker hookup.
 
 ## Tests
 
 `tests/run_all.py` validates each module on synthetic data with known truth:
 cointegration stats, the pairs backtester, the walk-forward harness (no leakage),
-cross-exchange and triangular arbitrage math, and the funding carry (positive
-funding earns, negative loses without flip, fees reduce returns). **All 30 pass**,
-no pytest required.
+and the cross-exchange / triangular arbitrage math. **All 25 pass**, no pytest
+required.
