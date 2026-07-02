@@ -30,6 +30,7 @@ from .crossexchange import (
     cross_exchange_spread,
     dislocation_stats,
 )
+from .arbgraph import build_edges, find_cycles, scan as scan_triangular
 from .pairs import screen_pairs
 from .signals import zscore_signal
 from .backtest import backtest_pair, BacktestResult
@@ -41,6 +42,7 @@ __all__ = [
     "fetch_ohlcv", "price_panel", "DEFAULT_UNIVERSE",
     "daily_close_panel", "live_quote_panel", "USD_EXCHANGES", "TAKER_FEE_BPS",
     "live_arbitrage", "scan_live_arbitrage", "cross_exchange_spread", "dislocation_stats",
+    "build_edges", "find_cycles", "scan_triangular",
     "screen_pairs", "zscore_signal", "backtest_pair", "BacktestResult",
     "walk_forward", "WalkForwardResult",
     "performance_summary", "sharpe", "max_drawdown", "equity_curve",

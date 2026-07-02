@@ -43,13 +43,14 @@ data.price_panel   →   pairs.screen_pairs   →   backtest.backtest_pair   →
 | `cryptostat/data.py` | Free key-less OHLCV from Coinbase (paginated history) & Kraken, with CSV caching; aligned price panels |
 | `cryptostat/exchanges.py` | Multi-venue layer over **5 free USD exchanges** (Coinbase, Kraken, Bitstamp, Gemini, Bitfinex): daily-close panels and live bid/ask quotes for the same asset |
 | `cryptostat/crossexchange.py` | **Cross-exchange arbitrage**: live buy-here/sell-there scan net of taker fees, and historical cross-venue dislocation stats |
+| `cryptostat/arbgraph.py` | **Cross-venue triangular / cyclic arbitrage**: builds a live conversion-rate graph across all venues and finds profitable loops (each leg on its best exchange), net of fees |
 | `cryptostat/stats.py` | ADF unit-root test, Engle-Granger cointegration, OLS/TLS hedge ratio, OU half-life, z-score — all pure numpy/scipy |
 | `cryptostat/pairs.py` | Scan every pair in a universe, rank cointegrated candidates by test statistic and half-life |
 | `cryptostat/signals.py` | Baseline z-score signal **+ the research surface (your edge goes here)** |
 | `cryptostat/backtest.py` | Vectorized, look-ahead-free pairs backtester with transaction costs |
 | `cryptostat/walkforward.py` | **Out-of-sample validation**: re-fit on a rolling train window, trade only the next unseen window; reports the in-sample-vs-OOS overfitting gap |
 | `cryptostat/metrics.py` | Sharpe, Sortino, Calmar, max drawdown, hit rate, equity curve |
-| `scripts/` | `01_fetch_universe` → `02_screen_pairs` → `03_backtest_pair` → `04_walk_forward`; `05_batch_results` writes a `results/` folder; `06_cross_exchange` hunts cross-venue arbitrage |
+| `scripts/` | `01_fetch_universe` → `02_screen_pairs` → `03_backtest_pair` → `04_walk_forward`; `05_batch_results` writes a `results/` folder; `06_cross_exchange` and `07_triangular` hunt cross-venue arbitrage |
 | `tests/` | Cointegration + backtest correctness on synthetic series with known truth |
 
 ## Quick start
@@ -62,7 +63,7 @@ python scripts/02_screen_pairs.py       # rank cointegrated pairs
 python scripts/03_backtest_pair.py --a BCH-USD --b LTC-USD   # in-sample backtest
 python scripts/04_walk_forward.py  --a MATIC-USD --b ADA-USD # honest out-of-sample test
 
-python tests/run_all.py                 # 21 tests, no pytest needed
+python tests/run_all.py                 # 25 tests, no pytest needed
 ```
 
 ```python
@@ -105,6 +106,31 @@ volatility spikes and on thinner altcoins (in one run AAVE's cross-venue spread
 beat fees on 2.3% of days vs 0% for BTC), and capturing them needs low-latency
 execution with balances pre-positioned on both venues. Measuring exactly that is
 the point.
+
+### Cross-venue triangular arbitrage (`arbgraph.py`)
+
+The generalization: model every conversion (`X → Y` at some venue, minus fees) as
+an edge in a graph, then search for profitable loops `USD → … → USD`. Each leg can
+run on whichever exchange is best — so triangular and cross-exchange arbitrage
+become one search (a 2-leg loop is cross-exchange; a 3-leg loop is a triangle).
+This is the classic Bellman-Ford negative-cycle view of arbitrage.
+
+```python
+from cryptostat.arbgraph import scan
+r = scan(assets=("USD","BTC","ETH","SOL","LTC"), max_len=4)
+r["best_multi"]     # best loop using every venue   (each leg on its best exchange)
+r["best_single"]    # best loop confined to one venue
+```
+
+`python scripts/07_triangular.py` writes `results/triangular.txt`. What it shows,
+and why it answers "more sources = more arbitrage?": using multiple venues **does**
+widen the best loop (multi-venue net beats single-venue, and a positive *gross*
+edge appears) — but two things fight back. Each leg pays a taker fee, so **longer
+loops net worse** (a 3-leg triangle came in below the 2-leg cross-exchange loop);
+and cross-venue loops need assets moved between exchanges, so the edge is gone by
+the time transfers settle. Net of fees, **0 of 16 loops were profitable** — the
+"maximum exploitation, sacrifice latency" idea is exactly what this measures, and
+the measurement is why it doesn't pay.
 
 ## Research tasks (the open, meaty part)
 
@@ -149,4 +175,4 @@ known OU speed) and the backtester (profitable on a synthetic mean-reverting
 spread, flat when never triggered, costs reduce returns) and the walk-forward
 harness (no leakage, stands down on broken pairs, tradeable OOS on a real OU
 spread), and cross-exchange arbitrage math (best route, fee-adjusted edge,
-dislocation stats). All 21 pass.
+dislocation stats; cross-venue cyclic-arbitrage cycle detection). All 25 pass.

@@ -1,0 +1,36 @@
+CROSS-VENUE TRIANGULAR / CYCLIC ARBITRAGE
+============================================================
+Generated : 2026-07-01 23:54 UTC
+Assets    : USD, BTC, ETH, SOL, LTC
+Venues    : coinbase, kraken, bitstamp, gemini, bitfinex
+Edges     : 68 live conversion rates
+
+BEST MULTI-VENUE LOOP (each leg on its best exchange)
+  net -34.9 bps  |  gross +11.1 bps  |  multi-venue=True
+      USD -> ETH   @ kraken
+      ETH -> USD   @ bitfinex
+
+BEST 3+ LEG TRIANGLE (multi-venue)
+  net -55.0 bps  |  gross +11.0 bps  |  multi-venue=True
+      USD -> BTC   @ kraken
+      BTC -> ETH   @ bitfinex
+      ETH -> USD   @ bitfinex
+
+BEST SINGLE-VENUE LOOP (all legs one exchange)
+  net -40.9 bps  |  gross -0.9 bps  |  multi-venue=False
+      USD -> SOL   @ bitfinex
+      SOL -> USD   @ bitfinex
+
+PER-EXCHANGE BEST NET (bps)
+  coinbase:-120  kraken:-52  bitstamp:-80  gemini:-80  bitfinex:-41
+
+Profitable loops after fees (net>0): 0 / 16
+
+INTERPRETATION
+  Using multiple sources DOES widen the best available loop (compare the
+  multi-venue vs single-venue net above) and often turns up a positive
+  GROSS edge. But each leg pays a taker fee, so ~3 legs cost ~1-2% round
+  trip — and cross-venue loops also require moving assets between
+  exchanges, which is slow: by the time coins settle, the prices have
+  moved. So these are MEASURED opportunities, not executable free money
+  unless you pre-position inventory on every venue and act in milliseconds.
