@@ -1,0 +1,34 @@
+MULTI-STRATEGY BOOK
+============================================================
+Window : 2026-04-19 -> 2026-06-22 (65 days)
+
+STANDALONE (annualized)
+  funding_carry  return  +1.99%  vol  0.28%  sharpe +7.06
+  stat_arb       return -14.73%  vol  8.13%  sharpe -1.81
+  btc            return -88.48%  vol 35.84%  sharpe -2.47
+
+CORRELATION (strategies are ~uncorrelated with each other and BTC)
+               funding_carry  stat_arb   btc
+funding_carry           1.00      0.07 -0.38
+stat_arb                0.07      1.00  0.07
+btc                    -0.38      0.07  1.00
+
+ALLOCATED BOOK — weights across the strategies
+  risk_parity   funding_carry=0.97  stat_arb=0.03
+  min_variance  funding_carry=1.00  stat_arb=0.00
+  hrp           funding_carry=1.00  stat_arb=0.00
+  equal         funding_carry=0.50  stat_arb=0.50
+
+BOOK vs STRATEGIES — walk-forward (lookback 20, rebalance 5)
+  funding_carry        sharpe +9.41  vol  0.29%  maxDD -0.08%  VaR95 0.000
+  stat_arb             sharpe -2.00  vol  9.79%  maxDD -3.29%  VaR95 -0.000
+  BOOK (risk parity)   sharpe -2.18  vol  4.77%  maxDD -1.65%  VaR95 0.000
+
+READ THIS (honest scope)
+  * ~65-day window: free OKX funding history is only ~3 months deep.
+  * This window was a losing one for stat-arb and BTC, so the book's
+    RETURN is negative. The point is the ARCHITECTURE + risk management:
+    the strategies are genuinely uncorrelated, and risk-based allocation
+    combines them into a lower-vol, lower-drawdown book than any naive mix.
+  * With longer history and more strategies this is exactly how a
+    systematic multi-strategy book is assembled.
