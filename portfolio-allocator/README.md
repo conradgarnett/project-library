@@ -16,6 +16,7 @@ data, no API keys.
 | `portlib/optimize.py` | mean-variance: **min-variance**, **max-Sharpe**, MV-utility (long-only, weight caps) |
 | `portlib/riskparity.py` | inverse-vol + **equal-risk-contribution risk parity** + risk decomposition |
 | `portlib/hrp.py` | **Hierarchical Risk Parity** (López de Prado): cluster → quasi-diagonalize → recursive bisection |
+| `portlib/frontier.py` | **Markowitz efficient frontier** + global-min-variance and max-Sharpe tangency points |
 | `portlib/allocate.py` | one `allocate(returns, method=...)` over all six methods |
 | `portlib/risk.py` | **VaR** (historical & parametric), **CVaR/expected shortfall**, drawdown, stress, performance report |
 | `portlib/backtest.py` | **walk-forward** rebalancing; `compare_methods` runs them head-to-head OOS |
@@ -29,7 +30,8 @@ pip install -r requirements.txt        # numpy, scipy, pandas, requests (+ matpl
 
 python scripts/01_allocate.py                    # weights by method + risk report
 python scripts/02_backtest.py                    # walk-forward compare -> results/ + figures/
-python tests/run_all.py                          # 12 tests, no pytest needed
+python scripts/03_frontier.py                    # efficient frontier chart -> figures/
+python tests/run_all.py                          # 17 tests, no pytest needed
 ```
 
 ```python
@@ -92,13 +94,21 @@ The risk-aware methods (min-variance, max-Sharpe) cut volatility and drawdown an
 preserve capital through the crypto sell-off, while equal-weight sinks — visible
 in `figures/allocation_equity.png`.
 
+**Efficient frontier** (`scripts/03_frontier.py` → `figures/efficient_frontier.png`):
+the classic Markowitz bullet with the individual assets, the capital market line,
+and every method's portfolio on the risk/return plane. Global min-variance sits at
+the frontier's nose; max-Sharpe is the tangency point; the return-agnostic methods
+(risk-parity, HRP, equal) cluster in the middle since they ignore expected returns.
+
 ## Tests
 
-`tests/run_all.py` (12 tests) validates on synthetic data with known truth:
+`tests/run_all.py` (17 tests) validates on synthetic data with known truth:
 Ledoit-Wolf is PSD with δ∈[0,1]; every method gives valid long-only weights;
 min-variance overweights the low-vol asset; risk parity equalizes risk
 contributions; HRP sums to one; VaR/CVaR match the Gaussian case (CVaR deeper
-than VaR); and the backtest has no look-ahead and diversification cuts vol.
+than VaR); the backtest has no look-ahead and diversification cuts vol; and the
+efficient frontier's min-variance is leftmost, its upper branch is monotone, and
+the tangency portfolio beats every single-asset Sharpe.
 
 ## Next steps
 - Black-Litterman (blend views with the market prior).

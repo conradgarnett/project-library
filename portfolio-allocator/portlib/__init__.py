@@ -25,8 +25,9 @@ from .risk import (
     max_drawdown, worst_period,
 )
 from .backtest import walk_forward, compare_methods
+from .frontier import efficient_frontier, portfolio_point
 from .data import price_panel, returns_panel, load_returns_csv, DEFAULT_UNIVERSE
-from .visualize import plot_method_equity, plot_weights
+from .visualize import plot_method_equity, plot_weights, plot_efficient_frontier
 
 __all__ = [
     "sample_covariance", "ledoit_wolf", "cov_estimate", "correlation_from_cov",
@@ -36,8 +37,9 @@ __all__ = [
     "risk_report", "RiskReport", "historical_var", "parametric_var",
     "conditional_var", "max_drawdown", "worst_period",
     "walk_forward", "compare_methods",
+    "efficient_frontier", "portfolio_point",
     "price_panel", "returns_panel", "load_returns_csv", "DEFAULT_UNIVERSE",
-    "plot_method_equity", "plot_weights",
+    "plot_method_equity", "plot_weights", "plot_efficient_frontier",
 ]
 
 __version__ = "0.1.0"
