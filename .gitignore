@@ -8,9 +8,9 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 
-# Cached market data and generated charts (regenerate with the scripts).
+# Cached market data (regenerate with the scripts). Charts in figures/ ARE
+# committed as deliverables.
 data/
-figures/
 
 # Unrelated files that live in this working directory but aren't part of
 # this project (other branches / nested repos).

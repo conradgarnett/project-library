@@ -3,6 +3,9 @@ scipy>=1.10
 pandas>=2.0
 requests>=2.28
 
+# Only needed for the charts in cryptostat/funding/visualize.py (scripts/funding_charts.py).
+matplotlib>=3.7
+
 # Optional: only used to render backtest charts in scripts/03_backtest_pair.py.
 matplotlib>=3.7
 

@@ -117,11 +117,19 @@ basis-aware Sharpe well above the average standalone coin — **avg standalone �
 of ~2. Inverse-vol (risk-balanced) beats equal weight because it down-weights the
 noisiest coins. This is a genuine diversification gain, not a modeling shortcut.
 
+## Charts (`figures/`)
+
+`python scripts/funding_charts.py` writes:
+- `portfolio_equity.png` — portfolio equity (equal vs inverse-vol) over the jagged
+  individual-coin carries, showing the diversification benefit visually.
+- `idealized_vs_basis.png` — BTC idealized vs basis-aware equity; the basis-aware
+  line is visibly noisier, which is why its Sharpe is lower even at a similar level.
+- `funding_over_time.png` — annualized funding per coin across time (regimes).
+
 ### Next steps
-- **Done:** basis-aware backtest (`basis_carry_backtest`) and portfolio of
-  carries (`carry_portfolio`).
+- **Done:** basis-aware backtest (`basis_carry_backtest`), portfolio of carries
+  (`carry_portfolio`), and charts (`funding/visualize.py`).
 - Model perp-leg **margin & liquidation** at a chosen leverage.
-- Charts: funding over time, portfolio equity curve, funding-regime shifts.
 
 ## Tests
 

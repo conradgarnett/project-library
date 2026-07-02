@@ -52,6 +52,13 @@ def test_inverse_vol_beats_equal_here():
     assert iv > eq
 
 
+def test_portfolio_equity_chart_renders_offline():
+    # The chart layer should run on a synthetic panel with no network.
+    from cryptostat.funding.visualize import plot_portfolio_equity
+    fig = plot_portfolio_equity(panel=_panel(vols=(1e-4, 1e-4, 4e-4)), vol_window=60)
+    assert fig is not None and len(fig.axes) == 1
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     fails = 0
