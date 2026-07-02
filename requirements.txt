@@ -1,0 +1,7 @@
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+requests>=2.28
+
+# Only for the equity-curve chart (portlib/visualize.py).
+matplotlib>=3.7
