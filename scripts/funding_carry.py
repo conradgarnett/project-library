@@ -2,8 +2,8 @@
 """
 Funding-rate carry backtest across several coins (OKX perpetual swaps).
 
-    python scripts/08_funding_carry.py
-    python scripts/08_funding_carry.py --coins BTC ETH SOL --limit 1095 --flip
+    python scripts/funding_carry.py
+    python scripts/funding_carry.py --coins BTC ETH SOL --limit 1095 --flip
 
 Writes results/funding/carry.txt — the annualized delta-neutral carry yield per
 coin, both the naive long-basis version and the flip version.
