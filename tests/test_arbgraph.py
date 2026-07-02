@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cryptostat.arbgraph import Edge, find_cycles  # noqa: E402
+from cryptostat.crossvenue.arbgraph import Edge, find_cycles  # noqa: E402
 
 
 def _edge(frm, to, ex, rate):

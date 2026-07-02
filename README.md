@@ -1,178 +1,146 @@
-# Crypto Statistical Arbitrage
+# Crypto Quant Toolkit
 
-A research toolkit for **market-neutral pairs trading on crypto**: find two coins
-whose prices move together, trade the spread when it diverges, and profit as it
-reverts to its historical relationship.
+A multi-strategy crypto quant research toolkit, organized by strategy family. It
+runs entirely on **free, key-less exchange APIs** (Coinbase, Kraken, Bitstamp,
+Gemini, Bitfinex, OKX) — crypto is used deliberately because its market data is
+free and deep, unlike equities where good history costs hundreds to thousands of
+dollars.
 
-Crypto is used deliberately — its market data is **free and deep** (full history,
-down to the minute, from public exchange APIs), so the entire pipeline runs with
-**no paid data feeds and no API keys**, unlike equities where good history costs
-hundreds to thousands of dollars.
+Three strategy families, one shared foundation:
 
-> **Scope.** The plumbing — data, cointegration statistics, pair screening, the
-> backtest engine, and performance metrics — is built and tested. The *trading
-> edge* (signal design) is deliberately left as open research in
-> [`cryptostat/signals.py`](cryptostat/signals.py). See **Research tasks** below.
+| Subpackage | Strategy | Idea |
+| --- | --- | --- |
+| `statarb/` | **Statistical arbitrage** | trade the mean-reverting spread of a cointegrated coin pair |
+| `crossvenue/` | **Cross-venue & triangular arbitrage** | exploit price gaps of one asset across exchanges, and cyclic (triangular) loops |
+| `funding/` | **Funding-rate carry** | harvest perpetual-swap funding with a delta-neutral position |
 
----
+> **Scope.** The plumbing — data, statistics, backtesting, walk-forward
+> validation, metrics — is built and tested. The *trading edge* (signal design)
+> is left as open research in `statarb/signals.py`. See **Research tasks**.
 
-## The idea
-
-Two assets are **cointegrated** if some linear combination of their prices is
-stationary (mean-reverting) even though each price on its own wanders. That
-stationary combination is the **spread**. The strategy:
-
-1. **Screen** a universe of coins for cointegrated pairs (Engle-Granger test).
-2. For a pair, estimate the **hedge ratio** β so that `spread = A − β·B` is
-   mean-reverting, and measure its **half-life**.
-3. **Trade** the spread's z-score: short it when unusually high, buy it when
-   unusually low, exit as it reverts. The position is dollar-neutral, so it
-   makes money whether the market goes up or down — only the *relationship*
-   matters.
-
-## Pipeline
+## Layout
 
 ```
-data.price_panel   →   pairs.screen_pairs   →   backtest.backtest_pair   →   metrics
- free exchange          Engle-Granger +          dollar-neutral spread       Sharpe,
- OHLCV (cached)         half-life ranking        trading + costs             drawdown, ...
+cryptostat/
+  common/       data.py  stats.py  metrics.py         # shared foundation
+  statarb/      pairs.py  signals.py  backtest.py  walkforward.py
+  crossvenue/   exchanges.py  crossexchange.py  arbgraph.py
+  funding/      data.py  carry.py
+scripts/        01..08  (fetch → screen → backtest → walk-forward → batch →
+                         cross-exchange → triangular → funding carry)
+tests/          run_all.py + one suite per module   (30 tests, no pytest needed)
+results/        committed example outputs
 ```
-
-| Module | Role |
-| --- | --- |
-| `cryptostat/data.py` | Free key-less OHLCV from Coinbase (paginated history) & Kraken, with CSV caching; aligned price panels |
-| `cryptostat/exchanges.py` | Multi-venue layer over **5 free USD exchanges** (Coinbase, Kraken, Bitstamp, Gemini, Bitfinex): daily-close panels and live bid/ask quotes for the same asset |
-| `cryptostat/crossexchange.py` | **Cross-exchange arbitrage**: live buy-here/sell-there scan net of taker fees, and historical cross-venue dislocation stats |
-| `cryptostat/arbgraph.py` | **Cross-venue triangular / cyclic arbitrage**: builds a live conversion-rate graph across all venues and finds profitable loops (each leg on its best exchange), net of fees |
-| `cryptostat/stats.py` | ADF unit-root test, Engle-Granger cointegration, OLS/TLS hedge ratio, OU half-life, z-score — all pure numpy/scipy |
-| `cryptostat/pairs.py` | Scan every pair in a universe, rank cointegrated candidates by test statistic and half-life |
-| `cryptostat/signals.py` | Baseline z-score signal **+ the research surface (your edge goes here)** |
-| `cryptostat/backtest.py` | Vectorized, look-ahead-free pairs backtester with transaction costs |
-| `cryptostat/walkforward.py` | **Out-of-sample validation**: re-fit on a rolling train window, trade only the next unseen window; reports the in-sample-vs-OOS overfitting gap |
-| `cryptostat/metrics.py` | Sharpe, Sortino, Calmar, max drawdown, hit rate, equity curve |
-| `scripts/` | `01_fetch_universe` → `02_screen_pairs` → `03_backtest_pair` → `04_walk_forward`; `05_batch_results` writes a `results/` folder; `06_cross_exchange` and `07_triangular` hunt cross-venue arbitrage |
-| `tests/` | Cointegration + backtest correctness on synthetic series with known truth |
 
 ## Quick start
 
 ```bash
 pip install -r requirements.txt        # numpy, scipy, pandas, requests (+ optional matplotlib)
 
-python scripts/01_fetch_universe.py     # download ~2y daily prices (cached to data/)
-python scripts/02_screen_pairs.py       # rank cointegrated pairs
-python scripts/03_backtest_pair.py --a BCH-USD --b LTC-USD   # in-sample backtest
-python scripts/04_walk_forward.py  --a MATIC-USD --b ADA-USD # honest out-of-sample test
+python scripts/01_fetch_universe.py                          # cache ~2y daily prices
+python scripts/02_screen_pairs.py                            # rank cointegrated pairs
+python scripts/04_walk_forward.py  --a MATIC-USD --b ADA-USD # honest out-of-sample stat-arb
+python scripts/07_triangular.py                              # cross-venue triangular scan
+python scripts/08_funding_carry.py                           # funding-rate carry
 
-python tests/run_all.py                 # 25 tests, no pytest needed
+python tests/run_all.py                # 30 tests
 ```
 
 ```python
-from cryptostat import price_panel, screen_pairs, backtest_pair, performance_summary
-panel = price_panel(["BTC-USD", "ETH-USD", "LTC-USD", "BCH-USD"], days=730)
-pairs = screen_pairs(panel)                                  # ranked candidates
-res = backtest_pair(panel["BCH-USD"], panel["LTC-USD"])
-print(performance_summary(res.returns).as_dict())
+import cryptostat as cs                # everything re-exported at top level
+panel = cs.price_panel(["BTC-USD", "ETH-USD", "LTC-USD"], days=730)
+cs.screen_pairs(panel)                 # statistical arbitrage
+cs.scan_triangular()                   # cross-venue triangular arbitrage
+cs.carry_backtest(cs.funding_history("BTC"))   # funding-rate carry
 ```
 
-## Method notes
+---
 
-- **Cointegration (Engle-Granger):** regress A on B, then ADF-test the residual
-  spread for stationarity. Uses Engle-Granger-specific critical values (stricter
-  than a plain ADF because the spread is fitted, not observed).
-- **Half-life:** from an Ornstein-Uhlenbeck / AR(1) fit, `half-life = −ln2 / b`.
-  It filters pairs: too fast reverts into transaction costs, too slow ties up
-  capital.
-- **No look-ahead:** the position earns P&L on the *next* period, and the
-  z-score uses a trailing window only.
+## 1. Statistical arbitrage (`statarb/`)
 
-## Cross-exchange arbitrage
+Two assets are **cointegrated** if a linear combination of their prices is
+stationary even though each wanders. That combination is the **spread**. Screen a
+universe (Engle-Granger), estimate the hedge ratio β so `spread = A − β·B` mean
+-reverts, then trade its z-score — dollar-neutral, so only the *relationship*
+matters, not market direction.
 
-A second, different arbitrage lens: instead of two *assets* on one venue, look at
-one *asset* across many venues. `cryptostat/exchanges.py` pulls the same coin
-from five free USD exchanges; `cryptostat/crossexchange.py` hunts dislocations.
+**Walk-forward validation (`walkforward.py`) is the judge.** A plain backtest
+fits parameters on the same data it trades — it has seen the future. Walk-forward
+re-estimates on a rolling *training* window and trades only the next *unseen*
+window; the gap between in-sample and out-of-sample Sharpe is the overfitting
+tax. `scripts/05_batch_results.py` runs the top pairs and writes `results/`.
 
-```python
-from cryptostat.crossexchange import scan_live_arbitrage, cross_exchange_spread, dislocation_stats
-scan_live_arbitrage(["BTC", "ETH", "SOL"])          # live buy-here/sell-there, net of fees
-sp = cross_exchange_spread("SOL", days=300)         # historical dearest-vs-cheapest spread
-dislocation_stats(sp, fee_bps=80)                   # how often the gap beat round-trip fees
-```
+## 2. Cross-venue & triangular arbitrage (`crossvenue/`)
 
-`python scripts/06_cross_exchange.py` writes `results/cross_exchange/`. The honest
-finding: between major USD venues, live gross gaps (single-digit to low-tens of
-bps) rarely beat ~50-100 bps round-trip taker fees, so **executable spot arbitrage
-is essentially zero** — markets are efficient. Real, fleeting edges show up only in
-volatility spikes and on thinner altcoins (in one run AAVE's cross-venue spread
-beat fees on 2.3% of days vs 0% for BTC), and capturing them needs low-latency
-execution with balances pre-positioned on both venues. Measuring exactly that is
-the point.
+`exchanges.py` pulls the *same* asset from five USD venues. Two lenses:
 
-### Cross-venue triangular arbitrage (`arbgraph.py`)
+- **Cross-exchange** (`crossexchange.py`, `scripts/06`): buy on the cheapest
+  venue, sell on the dearest — live scan net of taker fees + historical
+  dislocation stats.
+- **Triangular / cyclic** (`arbgraph.py`, `scripts/07`): model every conversion
+  `X → Y` at a venue as a graph edge and find profitable loops `USD → … → USD`,
+  each leg on its best exchange (the Bellman-Ford negative-cycle view). A 2-leg
+  loop is cross-exchange; a 3-leg loop is a triangle.
 
-The generalization: model every conversion (`X → Y` at some venue, minus fees) as
-an edge in a graph, then search for profitable loops `USD → … → USD`. Each leg can
-run on whichever exchange is best — so triangular and cross-exchange arbitrage
-become one search (a 2-leg loop is cross-exchange; a 3-leg loop is a triangle).
-This is the classic Bellman-Ford negative-cycle view of arbitrage.
+**Honest finding (`results/`):** between major USD venues, gross gaps (single
+-digit to low-tens of bps) rarely beat ~50–100 bps round-trip taker fees. Using
+more venues *does* widen the best loop and surface a positive gross edge, but
+each extra leg adds a fee (so longer loops net *worse*), and cross-venue legs need
+slow transfers — **0 executable loops after fees.** Markets are efficient; the
+value is measuring exactly why.
 
-```python
-from cryptostat.arbgraph import scan
-r = scan(assets=("USD","BTC","ETH","SOL","LTC"), max_len=4)
-r["best_multi"]     # best loop using every venue   (each leg on its best exchange)
-r["best_single"]    # best loop confined to one venue
-```
+## 3. Funding-rate carry (`funding/`)
 
-`python scripts/07_triangular.py` writes `results/triangular.txt`. What it shows,
-and why it answers "more sources = more arbitrage?": using multiple venues **does**
-widen the best loop (multi-venue net beats single-venue, and a positive *gross*
-edge appears) — but two things fight back. Each leg pays a taker fee, so **longer
-loops net worse** (a 3-leg triangle came in below the 2-leg cross-exchange loop);
-and cross-venue loops need assets moved between exchanges, so the edge is gone by
-the time transfers settle. Net of fees, **0 of 16 loops were profitable** — the
-"maximum exploitation, sacrifice latency" idea is exactly what this measures, and
-the measurement is why it doesn't pay.
+Perpetual swaps never expire, so a **funding rate** paid every 8 hours tethers the
+perp to spot: when the crowd is long, longs pay shorts. Hold **long spot + short
+perp** and your price exposure cancels while you *collect that funding* — a
+market-neutral yield. Unlike the arbitrage above, this is a **risk premium**, not
+a fleeting mispricing, so it persists and isn't latency-bound.
+
+`funding/data.py` pulls OKX funding history (free); `carry.py` backtests the
+delta-neutral carry (naive long-basis, or `flip` to always collect).
+`scripts/08_funding_carry.py` writes `results/funding/`.
+
+**Honest finding:** in the current calm regime, funding is modest — BTC ≈ +1.7%,
+ETH ≈ +2.1%, DOGE ≈ +4.2% annualized (memecoins draw crowded longs) — so carry
+yields are low single digits (they run far richer in bull markets). Reported
+Sharpes look huge (8–20) **only because the model assumes a perfect hedge**, i.e.
+a near-zero-variance funding drip; that number excludes the real risks —
+exchange/counterparty failure (FTX), perp-leg liquidation on sharp moves, and
+basis drift. The naive long-basis version beats `flip` here because flipping on
+every funding sign-change churns fees.
+
+---
 
 ## Research tasks (the open, meaty part)
 
-The baseline signal is intentionally naive and, on many pairs, loses money after
-costs — which is the point. Real edge comes from the work below (each is a
-self-contained experiment: implement, backtest, and keep only what survives
-**out-of-sample**):
+Each is a self-contained experiment — implement, backtest, keep only what survives
+**out-of-sample**:
 
-1. **Walk-forward validation — built (`cryptostat/walkforward.py`).** Use it as
-   the judge for *every* idea below: an experiment only counts if it improves the
-   **out-of-sample** Sharpe, not the in-sample one. (On the raw baseline the gap
-   is large and OOS is negative — that's your starting point to beat.)
-2. **Dynamic hedge ratio (Kalman filter).** Replace the static β with a Kalman
-   filter so the spread tracks a slowly-drifting relationship.
-3. **Half-life-aware signals & time-stops.** Scale windows/holding to each pair's
-   half-life; exit if it hasn't reverted within ~N half-lives.
-4. **Portfolio of pairs** with a risk budget, instead of one pair at a time.
-5. **Cointegration decay filter.** Re-test pairs on a rolling basis and stand
-   down when the relationship breaks (rolling Engle-Granger p-value).
-6. **Realistic costs & execution.** Model fees + spread + slippage per venue; the
-   current cost model is a single `cost_bps` proxy.
-7. **Cross-exchange arbitrage — analysis built (`crossexchange.py`).** The
-   measurement layer (live scan + historical dislocation) is done; the open work
-   is a live execution simulator that accounts for latency, transfer times, and
-   pre-positioned balances, plus extending to funding-rate / perp-spot basis.
+1. **Walk-forward everything.** Built for stat-arb (`walkforward.py`); use OOS
+   Sharpe as the only judge. Extend it to walk-forward *pair selection* (choosing
+   pairs on the training window only) to kill selection bias.
+2. **Dynamic hedge ratio (Kalman filter)** for the stat-arb spread.
+3. **Half-life-aware signals & time-stops.**
+4. **Portfolio of pairs / portfolio of carry** with a risk budget.
+5. **Realistic funding carry:** add basis drift, margin/liquidation modeling, and
+   exchange-risk haircuts so the Sharpe reflects real risk, not the ideal hedge.
+6. **Cross-venue execution simulator** with latency and transfer times.
 
 ## Honest caveats
 
-- Screening tests cointegration on log-prices while the backtester forms the raw
-  spread — reconcile these (log-spread trading) as part of task 1.
-- Multiple-testing bias: screening hundreds of pairs will surface some that are
-  cointegrated by luck. Out-of-sample validation is not optional.
-- This is a **research/backtest tool, not a live trader** — no broker or
-  execution hookup.
+- Stat-arb screening tests cointegration on log-prices while the backtester forms
+  the raw spread — reconcile these (log-spread trading).
+- Multiple-testing bias: screening hundreds of pairs surfaces some cointegrated
+  by luck. Out-of-sample validation is not optional.
+- Funding carry Sharpes assume a perfect hedge and ignore counterparty/liquidation
+  risk — treat them as idealized.
+- This is a **research/backtest toolkit, not a live trader** — no broker hookup.
 
 ## Tests
 
-`tests/` validates the statistics against synthetic series with known truth
-(ADF separates random walks from stationary series; Engle-Granger detects a
-constructed cointegrated pair and rejects independent walks; half-life recovers a
-known OU speed) and the backtester (profitable on a synthetic mean-reverting
-spread, flat when never triggered, costs reduce returns) and the walk-forward
-harness (no leakage, stands down on broken pairs, tradeable OOS on a real OU
-spread), and cross-exchange arbitrage math (best route, fee-adjusted edge,
-dislocation stats; cross-venue cyclic-arbitrage cycle detection). All 25 pass.
+`tests/run_all.py` validates each module on synthetic data with known truth:
+cointegration stats, the pairs backtester, the walk-forward harness (no leakage),
+cross-exchange and triangular arbitrage math, and the funding carry (positive
+funding earns, negative loses without flip, fees reduce returns). **All 30 pass**,
+no pytest required.

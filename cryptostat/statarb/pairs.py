@@ -18,7 +18,7 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 
-from .stats import engle_granger
+from ..common.stats import engle_granger
 
 
 def screen_pairs(

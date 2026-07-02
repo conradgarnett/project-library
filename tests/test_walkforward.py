@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from cryptostat.walkforward import walk_forward  # noqa: E402
+from cryptostat.statarb.walkforward import walk_forward  # noqa: E402
 
 
 def _mean_reverting_pair(n=2000, seed=0, beta=1.5, amp=6.0, theta=0.05):

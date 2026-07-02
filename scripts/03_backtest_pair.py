@@ -19,9 +19,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd  # noqa: E402
 
-from cryptostat.backtest import backtest_pair  # noqa: E402
-from cryptostat.data import fetch_ohlcv  # noqa: E402
-from cryptostat.metrics import equity_curve, performance_summary  # noqa: E402
+from cryptostat.statarb.backtest import backtest_pair  # noqa: E402
+from cryptostat.common.data import fetch_ohlcv  # noqa: E402
+from cryptostat.common.metrics import equity_curve, performance_summary  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

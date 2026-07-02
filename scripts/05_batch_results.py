@@ -21,12 +21,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd  # noqa: E402
 
-from cryptostat.backtest import backtest_pair  # noqa: E402
-from cryptostat.data import DEFAULT_UNIVERSE, fetch_ohlcv, price_panel  # noqa: E402
-from cryptostat.metrics import performance_summary  # noqa: E402
-from cryptostat.pairs import screen_pairs  # noqa: E402
-from cryptostat.stats import engle_granger  # noqa: E402
-from cryptostat.walkforward import walk_forward  # noqa: E402
+from cryptostat.statarb.backtest import backtest_pair  # noqa: E402
+from cryptostat.common.data import DEFAULT_UNIVERSE, fetch_ohlcv, price_panel  # noqa: E402
+from cryptostat.common.metrics import performance_summary  # noqa: E402
+from cryptostat.statarb.pairs import screen_pairs  # noqa: E402
+from cryptostat.common.stats import engle_granger  # noqa: E402
+from cryptostat.statarb.walkforward import walk_forward  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(ROOT, "results")

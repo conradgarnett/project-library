@@ -19,8 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd  # noqa: E402
 
-from cryptostat.data import DEFAULT_UNIVERSE, price_panel  # noqa: E402
-from cryptostat.pairs import screen_pairs  # noqa: E402
+from cryptostat.common.data import DEFAULT_UNIVERSE, price_panel  # noqa: E402
+from cryptostat.statarb.pairs import screen_pairs  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 

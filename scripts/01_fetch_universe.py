@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cryptostat.data import DEFAULT_UNIVERSE, price_panel  # noqa: E402
+from cryptostat.common.data import DEFAULT_UNIVERSE, price_panel  # noqa: E402
 
 
 def main():

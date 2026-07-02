@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from .signals import zscore_signal
-from .stats import hedge_ratio, zscore
+from ..common.stats import hedge_ratio, zscore
 
 
 @dataclass

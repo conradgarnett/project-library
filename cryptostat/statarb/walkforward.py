@@ -24,9 +24,9 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .metrics import performance_summary, sharpe
+from ..common.metrics import performance_summary, sharpe
 from .signals import zscore_signal
-from .stats import engle_granger, hedge_ratio
+from ..common.stats import engle_granger, hedge_ratio
 
 
 @dataclass

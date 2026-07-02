@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np  # noqa: E402
 
-from cryptostat.stats import (  # noqa: E402
+from cryptostat.common.stats import (  # noqa: E402
     adf_test,
     engle_granger,
     half_life,

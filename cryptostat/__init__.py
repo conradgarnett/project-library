@@ -1,51 +1,60 @@
 """
-cryptostat — a crypto statistical-arbitrage research toolkit.
+cryptostat — a crypto quant toolkit, organized by strategy family.
 
-Free, key-less exchange data (Coinbase/Kraken) + cointegration statistics +
-pair screening + a lightweight pairs backtester + performance metrics. The
-plumbing is done and tested; the trading edge (signal design) is left as
-research in ``cryptostat.signals``.
+Subpackages
+-----------
+common/     shared plumbing: market data, cointegration stats, performance metrics
+statarb/    statistical arbitrage (cointegration pairs trading) + walk-forward validation
+crossvenue/ cross-exchange & triangular/cyclic arbitrage across five free USD venues
+funding/    funding-rate carry: delta-neutral harvesting of perpetual-swap funding
 
-Pipeline:
-    data.price_panel  →  pairs.screen_pairs  →  backtest.backtest_pair  →  metrics
+Everything runs on free, key-less exchange APIs. The public API below is
+re-exported here for convenience (`from cryptostat import backtest_pair`), but
+each subpackage can also be imported directly (`from cryptostat.funding.carry
+import carry_backtest`).
 """
 
-from .stats import (
-    adf_test,
-    engle_granger,
-    hedge_ratio,
-    half_life,
-    zscore,
+# --- common ---------------------------------------------------------------- #
+from .common.stats import (
+    adf_test, engle_granger, hedge_ratio, half_life, zscore,
 )
-from .data import fetch_ohlcv, price_panel, DEFAULT_UNIVERSE
-from .exchanges import (
-    daily_close_panel,
-    live_quote_panel,
-    USD_EXCHANGES,
-    TAKER_FEE_BPS,
+from .common.data import fetch_ohlcv, price_panel, DEFAULT_UNIVERSE
+from .common.metrics import performance_summary, sharpe, max_drawdown, equity_curve
+
+# --- statistical arbitrage ------------------------------------------------- #
+from .statarb.pairs import screen_pairs
+from .statarb.signals import zscore_signal
+from .statarb.backtest import backtest_pair, BacktestResult
+from .statarb.walkforward import walk_forward, WalkForwardResult
+
+# --- cross-venue arbitrage ------------------------------------------------- #
+from .crossvenue.exchanges import (
+    daily_close_panel, live_quote_panel, USD_EXCHANGES, TAKER_FEE_BPS,
 )
-from .crossexchange import (
-    live_arbitrage,
-    scan_live_arbitrage,
-    cross_exchange_spread,
-    dislocation_stats,
+from .crossvenue.crossexchange import (
+    live_arbitrage, scan_live_arbitrage, cross_exchange_spread, dislocation_stats,
 )
-from .arbgraph import build_edges, find_cycles, scan as scan_triangular
-from .pairs import screen_pairs
-from .signals import zscore_signal
-from .backtest import backtest_pair, BacktestResult
-from .walkforward import walk_forward, WalkForwardResult
-from .metrics import performance_summary, sharpe, max_drawdown, equity_curve
+from .crossvenue.arbgraph import build_edges, find_cycles, scan as scan_triangular
+
+# --- funding-rate carry ---------------------------------------------------- #
+from .funding.data import funding_history, funding_now, OKX_FUNDING_INTERVAL_H
+from .funding.carry import carry_backtest, CarryResult
 
 __all__ = [
+    # common
     "adf_test", "engle_granger", "hedge_ratio", "half_life", "zscore",
     "fetch_ohlcv", "price_panel", "DEFAULT_UNIVERSE",
+    "performance_summary", "sharpe", "max_drawdown", "equity_curve",
+    # statarb
+    "screen_pairs", "zscore_signal", "backtest_pair", "BacktestResult",
+    "walk_forward", "WalkForwardResult",
+    # crossvenue
     "daily_close_panel", "live_quote_panel", "USD_EXCHANGES", "TAKER_FEE_BPS",
     "live_arbitrage", "scan_live_arbitrage", "cross_exchange_spread", "dislocation_stats",
     "build_edges", "find_cycles", "scan_triangular",
-    "screen_pairs", "zscore_signal", "backtest_pair", "BacktestResult",
-    "walk_forward", "WalkForwardResult",
-    "performance_summary", "sharpe", "max_drawdown", "equity_curve",
+    # funding
+    "funding_history", "funding_now", "OKX_FUNDING_INTERVAL_H",
+    "carry_backtest", "CarryResult",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd  # noqa: E402
 
-from cryptostat.crossexchange import (  # noqa: E402
+from cryptostat.crossvenue.crossexchange import (  # noqa: E402
     cross_exchange_spread,
     dislocation_stats,
     scan_live_arbitrage,
