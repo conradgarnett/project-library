@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DELTA Terminal · Open Market Data</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+<style>
+  :root[data-theme="noir"] {
+    /* Plain black + muted off-white — dark green/red for prices */
+    --bg:        #000000;
+    --bg-2:      #050505;
+    --surface:   #0a0a0a;
+    --surface-2: #111111;
+    --surface-3: #1a1a1a;
+    --row-alt:   #060606;
+    --border:    #222222;
+    --border-2:  #2e2e2e;
+    --border-3:  #4a4a4a;
+    --cyan:      #d4d4d4;
+    --cyan-dim:  #6a6a6a;
+    --mint:      #2f8a3e;
+    --mint-dim:  #1d4d24;
+    --rose:      #b32028;
+    --rose-dim:  #5c1418;
+    --amber:     #9a9a9a;
+    --violet:    #b5b5b5;
+    --text:      #d8d8d8;
+    --text-2:    #a0a0a0;
+    --muted:     #6a6a6a;
+    --dim:       #3a3a3a;
+    --mono:      'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  }
+  :root, :root[data-theme="paper"] {
+    /* Bright white paper — punchy accents */
+    --bg:        #f5f1e6;
+    --bg-2:      #ebe5d3;
+    --surface:   #ffffff;
+    --surface-2: #f0ebdb;
+    --surface-3: #e1d8bf;
+    --row-alt:   #f7f2e3;
+    --border:    #c4b896;
+    --border-2:  #998666;
+    --border-3:  #5e4f33;
+    --cyan:      #8a3a0c;
+    --cyan-dim:  #d0a878;
+    --mint:      #047a3a;
+    --mint-dim:  #8fd0a4;
+    --rose:      #c81d1d;
+    --rose-dim:  #f0a3a3;
+    --amber:     #5d3e0a;
+    --violet:    #4d3560;
+    --text:      #1a1208;
+    --text-2:    #3d3422;
+    --muted:     #6a5d40;
+    --dim:       #9c8c66;
+    --mono:      'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: var(--mono);
+    font-size: var(--base-font, 12px);
+    line-height: 1.35;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--cyan); color: #000; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 0; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-3); }
+
+  /* Leaflet dark overrides */
+  .leaflet-container { background: #02060d; font-family: var(--mono); outline: none; }
+  /* Tonal filters: keep land/sea contrast strong while matching theme */
+  :root[data-theme="paper"] .leaflet-tile-pane {
+    filter: sepia(0.3) saturate(0.95) brightness(0.85) contrast(1.18) hue-rotate(-5deg);
+  }
+  :root[data-theme="paper"] .leaflet-container { background: #8a7a52; }
+  :root[data-theme="noir"] .leaflet-tile-pane {
+    filter: grayscale(1) brightness(0.75) contrast(1.35);
+  }
+  :root[data-theme="noir"] .leaflet-container { background: #0a0a0a; }
+  .leaflet-control-attribution {
+    background: rgba(5,8,16,.7) !important;
+    color: var(--muted) !important;
+    font-family: var(--mono);
+    font-size: 9px;
+    border: 1px solid var(--border);
+  }
+  .leaflet-control-attribution a { color: var(--text-2) !important; }
+  .leaflet-control-zoom a {
+    background: var(--surface) !important;
+    color: var(--cyan) !important;
+    border: 1px solid var(--border) !important;
+    font-family: var(--mono) !important;
+    border-radius: 0 !important;
+  }
+  .leaflet-control-zoom a:hover { background: var(--surface-2) !important; }
+  .leaflet-tooltip.delta-tip {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-2);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 6px;
+    border-radius: 0;
+    box-shadow: 0 4px 16px rgba(0,0,0,.6);
+    white-space: pre;
+  }
+  .leaflet-tooltip.delta-tip::before { display: none; }
+  .leaflet-popup-content-wrapper {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 0 !important;
+    font-family: var(--mono);
+    box-shadow: 0 12px 32px rgba(0,0,0,.7);
+  }
+  .leaflet-popup-tip { background: var(--surface) !important; border: 1px solid var(--border-2); }
+  .leaflet-popup-content { margin: 8px 10px; font-size: 11px; min-width: 200px; }
+  .delta-plane-icon, .delta-ship-icon, .delta-sat-icon {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--mint);
+    font-weight: 700;
+    text-shadow: 0 0 6px rgba(52,211,153,.5);
+    pointer-events: auto;
+  }
+  .delta-plane-icon.selected, .delta-ship-icon.selected {
+    color: var(--cyan);
+    text-shadow: 0 0 12px var(--cyan), 0 0 4px #fff;
+  }
+  .delta-sat-icon { color: var(--violet); text-shadow: 0 0 10px var(--violet); font-size: 14px; }
+  .pulse-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 0 0 var(--cyan);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(56,189,248,.7); }
+    70%  { box-shadow: 0 0 0 14px rgba(56,189,248,0); }
+    100% { box-shadow: 0 0 0 0 rgba(56,189,248,0); }
+  }
+  .flash-up   { animation: flashUp .8s ease-out; }
+  .flash-down { animation: flashDown .8s ease-out; }
+  @keyframes flashUp   { 0% { background: rgba(52,211,153,.35); } 100% { background: transparent; } }
+  @keyframes flashDown { 0% { background: rgba(244,63,94,.35);  } 100% { background: transparent; } }
+
+  .blink { animation: blink 1.4s steps(2, end) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Layout shell */
+  #root { height: 100vh; display: flex; flex-direction: column; }
+  .marquee-track { display: inline-block; padding-left: 100%; animation: marquee 120s linear infinite; }
+  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+
+  /* Generic primitives */
+  .panel { background: var(--surface); border: 1px solid var(--border); }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    padding: 4px 8px;
+    color: var(--cyan);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .panel-head .meta { color: var(--muted); font-size: 10px; letter-spacing: 0; text-transform: none; }
+  table.dense { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.dense thead th {
+    background: var(--surface-2);
+    color: var(--cyan);
+    text-align: left;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    user-select: none;
+    cursor: pointer;
+    white-space: nowrap;
+    position: sticky; top: 0; z-index: 2;
+  }
+  table.dense thead th:hover { color: #fff; }
+  table.dense tbody td {
+    padding: var(--row-pad-y, 3px) 6px;
+    border-bottom: 1px solid rgba(127,127,127,.12);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  table.dense tbody tr:nth-child(even) { background: var(--row-alt); }
+  table.dense tbody tr:hover { background: var(--surface-3); cursor: pointer; }
+  table.dense tbody tr.selected { background: rgba(56,189,248,.12) !important; outline: 1px solid var(--cyan); outline-offset: -1px; }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .up { color: var(--mint); }
+  .down { color: var(--rose); }
+  .lbl { color: var(--cyan); }
+  .mut { color: var(--muted); }
+  .dim { color: var(--dim); }
+  .warn { color: var(--amber); }
+  .violet { color: var(--violet); }
+  .pill {
+    display: inline-block; padding: 1px 6px; font-size: 10px;
+    border: 1px solid var(--border-2); color: var(--text-2);
+    letter-spacing: .05em;
+  }
+  .pill-mint { color: var(--mint); border-color: var(--mint-dim); background: rgba(52,211,153,.06); }
+  .pill-rose { color: var(--rose); border-color: var(--rose-dim); background: rgba(244,63,94,.06); }
+  .pill-cyan { color: var(--cyan); border-color: var(--cyan-dim); background: rgba(56,189,248,.06); }
+  .pill-amber { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+  .pill-violet { color: var(--violet); border-color: #4a3a82; background: rgba(167,139,250,.06); }
+
+  .btn {
+    background: var(--surface); border: 1px solid var(--border-2); color: var(--text);
+    font-family: var(--mono); font-size: 11px; padding: 3px 8px;
+    cursor: pointer; letter-spacing: .05em;
+  }
+  .btn:hover { background: var(--surface-2); color: #fff; border-color: var(--border-3); }
+  .btn.on { background: var(--cyan); color: #000; border-color: var(--cyan); }
+
+  .kbd {
+    display: inline-block;
+    padding: 0 5px;
+    border: 1px solid var(--border-2);
+    background: var(--bg-2);
+    color: var(--text-2);
+    font-size: 10px;
+    border-radius: 2px;
+    min-width: 16px; text-align: center;
+  }
+
+  /* Tab bar scrollbar */
+  .tabbar > div::-webkit-scrollbar { height: 4px; }
+  .tabbar > div::-webkit-scrollbar-track { background: var(--surface); }
+  .tabbar > div::-webkit-scrollbar-thumb { background: var(--border-2); }
+  .tabbar > div::-webkit-scrollbar-thumb:hover { background: var(--border-3); }
+  .tabbar button { flex-shrink: 0; }
+  /* Edge fades when overflowed */
+  .tabbar::before, .tabbar::after {
+    content: ''; position: absolute; top: 0; bottom: 0; width: 24px;
+    pointer-events: none; z-index: 2;
+  }
+  .tabbar::before { left: 0;  background: linear-gradient(to right, var(--surface), transparent); }
+  .tabbar::after  { right: 0; background: linear-gradient(to left,  var(--surface), transparent); }
+
+  /* No-select for chrome */
+  .nosel { user-select: none; }
+</style>
+</head>
+<body>
+<script>
+  // Apply saved theme before first paint so the boot screen inherits the right CSS variables.
+  (function() {
+    try {
+      var t = JSON.parse(localStorage.getItem('delta_tweaks') || '{}');
+      if (t.theme) document.documentElement.setAttribute('data-theme', t.theme);
+    } catch(e) {}
+  })();
+</script>
+<div id="root"></div>
+<div id="boot-screen" style="
+  position:fixed;inset:0;z-index:9999;
+  background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;
+  transition:opacity .35s ease;
+">
+  <div style="color:var(--cyan);font-size:22px;font-weight:700;letter-spacing:.18em;">◆ DELTA</div>
+  <div style="color:var(--text-2);font-size:10px;letter-spacing:.22em;margin-top:8px;">TERMINAL · INITIALIZING</div>
+  <div style="margin-top:28px;display:flex;gap:6px;">
+    <span style="width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:bd .9s .0s ease-in-out infinite alternate;"></span>
+    <span style="width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:bd .9s .2s ease-in-out infinite alternate;"></span>
+    <span style="width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:bd .9s .4s ease-in-out infinite alternate;"></span>
+  </div>
+</div>
+<style>
+  @keyframes bd { from { opacity:.2; transform:scale(.8); } to { opacity:1; transform:scale(1); } }
+</style>
+<script>
+  // Hide boot screen once React has mounted something into #root
+  (function() {
+    var b = document.getElementById('boot-screen');
+    var ob = new MutationObserver(function() {
+      var r = document.getElementById('root');
+      if (r && r.children.length > 0) {
+        b.style.opacity = '0';
+        setTimeout(function() { b.style.display = 'none'; }, 380);
+        ob.disconnect();
+      }
+    });
+    ob.observe(document.getElementById('root'), { childList: true });
+  })();
+</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+
+<script type="text/babel" data-presets="react" src="delta-data.jsx?v=39"></script>
+<script type="text/babel" data-presets="react" src="delta-live.jsx?v=51"></script>
+<script type="text/babel" data-presets="react" src="delta-categories.jsx?v=51"></script>
+<script type="text/babel" data-presets="react" src="delta-maps.jsx?v=39"></script>
+<script type="text/babel" data-presets="react" src="delta-panels.jsx?v=54"></script>
+<script type="text/babel" data-presets="react" src="delta-panels2.jsx?v=41"></script>
+<script type="text/babel" data-presets="react" src="delta-panels3.jsx?v=53"></script>
+<script type="text/babel" data-presets="react" src="delta-orderflow3d.jsx?v=1"></script>
+<script type="text/babel" data-presets="react" src="delta-placeholders.jsx?v=39"></script>
+<script type="text/babel" data-presets="react" src="tweaks-panel.jsx?v=41"></script>
+<script type="text/babel" data-presets="react" src="delta-options.jsx?v=2"></script>
+<script type="text/babel" data-presets="react" src="delta-shell.jsx?v=63"></script>
+</body>
+</html>
