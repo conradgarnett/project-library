@@ -64,6 +64,7 @@ from feeds import cmc as cmc_feed
 from feeds import gdelt as gdelt_feed
 from feeds import hackernews as hn_feed
 from feeds import clinical_trials as ct_feed
+from feeds import futures as futures_feed
 
 # ── refresh intervals ────────────────────────────────────────────────────────
 REFRESH_MARKET        = 5
@@ -109,6 +110,7 @@ REFRESH_CLOUDFLARE    = 3600
 REFRESH_GDELT         = 1800
 REFRESH_HN            = 600
 REFRESH_CT            = 3600
+REFRESH_FUTURES       = 600
 
 # ── WebSocket connection manager ─────────────────────────────────────────────
 
@@ -307,6 +309,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(gdelt_feed.run_poller(REFRESH_GDELT)),
         asyncio.create_task(hn_feed.run_poller(REFRESH_HN)),
         asyncio.create_task(ct_feed.run_poller(REFRESH_CT)),
+        asyncio.create_task(futures_feed.run_poller(REFRESH_FUTURES)),
         asyncio.create_task(_broadcast_loop()),
     ]
     yield
@@ -639,6 +642,19 @@ async def get_gdelt():
 async def get_hackernews():
     s = hn_feed.get_hackernews()
     return {"stories": s.stories, "updated": s.updated, "error": s.error}
+
+@app.get("/api/futures")
+async def get_futures():
+    s = futures_feed.get_futures()
+    return {
+        "quotes":   s.quotes,
+        "groups":   s.groups,
+        "cot":      s.cot,
+        "cot_date": s.cot_date,
+        "updated":  s.updated,
+        "error":    s.error,
+    }
+
 
 @app.get("/api/clinical-trials")
 async def get_clinical_trials():

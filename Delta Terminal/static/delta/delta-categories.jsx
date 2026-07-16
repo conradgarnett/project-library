@@ -2,7 +2,7 @@
 (function () {
   // Order matches backend's CATEGORIES dict
   const CATEGORIES = [
-    { code: 'fin', label: 'FINANCE',     tabs: ['MKT','CRT','ERN','PFL','ALT','EQT','BND','FRX','FRD','OFL','OPT','OF3','CRY','COM','MCR','NEWS','REC','INS'] },
+    { code: 'fin', label: 'FINANCE',     tabs: ['MKT','FUT','CRT','ERN','PFL','ALT','EQT','BND','FRX','FRD','OFL','OPT','OF3','CRY','COM','MCR','NEWS','REC','INS'] },
     { code: 'geo', label: 'GEOPOLITICS', tabs: ['WAR','POL','SAN','REF','ELE','DIP','TER','INT'] },
     { code: 'eng', label: 'ENERGY',      tabs: ['OIL','NUC','REN','GAS','ELG','CLI'] },
     { code: 'sec', label: 'CYBER',       tabs: ['CVE','NET','DRK','THR','DAR','LEK','SOC','HAC'] },
@@ -17,7 +17,7 @@
   // Display labels (matches backend TAB_NAMES + a couple of additions)
   const TAB_NAMES = {
     // Finance
-    MKT:'Markets', CRT:'Charts', ERN:'Earnings', PFL:'Portfolio', ALT:'Alerts',
+    MKT:'Markets', FUT:'Futures', CRT:'Charts', ERN:'Earnings', PFL:'Portfolio', ALT:'Alerts',
     EQT:'Equity', BND:'Bonds', FRX:'Forex', FRD:'FRED Macro', OPT:'Mispricing',
     CRY:'Crypto', COM:'Commodities', MCR:'Macro', NEWS:'News', OFL:'Options Flow', OF3:'Order Flow 3D', REC:'AI Picks', INS:'INS - Insider',
     // Geopolitics

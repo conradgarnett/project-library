@@ -87,6 +87,7 @@
       case 'FRD':  return P.FredPanel         ? <P.FredPanel snap={snap} />         : <NotImplemented code="FRD" name="FRED Macro" />;
       case 'MCR':  return P.FredPanel         ? <P.FredPanel snap={snap} />         : <NotImplemented code="MCR" name="Macro" />;
       case 'COM':  return P.CommoditiesPanel  ? <P.CommoditiesPanel snap={snap} />  : <NotImplemented code="COM" name="Commodities" />;
+      case 'FUT':  return P.FuturesPanel      ? <P.FuturesPanel />                  : <NotImplemented code="FUT" name="Futures" />;
       case 'OFL':  return P.OptionsFlowPanel  ? <P.OptionsFlowPanel snap={snap} />  : <NotImplemented code="OFL" name="Options Flow" />;
       case 'OPT':  return P.OptionsMispricingPanel ? <P.OptionsMispricingPanel /> : <NotImplemented code="OPT" name="Options Mispricing" />;
       case 'OF3':  return P.OrderFlow3DPanel  ? <P.OrderFlow3DPanel snap={snap} />  : <NotImplemented code="OF3" name="Order Flow 3D" />;
