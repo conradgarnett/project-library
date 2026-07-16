@@ -526,8 +526,6 @@
         {/* TICKER */}
         <div style={{ height: 26, background: 'var(--surface)', borderBottom: '1px solid var(--border)',
           overflow: 'hidden', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-          <div style={{ padding: '0 10px', color: 'var(--cyan)', fontSize: 10, letterSpacing: '.14em',
-            borderRight: '1px solid var(--border)', background: 'var(--surface-2)', height: '100%', display: 'flex', alignItems: 'center' }}>TAPE</div>
           <div className="marquee-track" style={{ paddingLeft: 24, lineHeight: '26px', fontSize: 11 }}>
             {[...ticker, ...ticker].map((t, i) => (
               <span key={i} style={{ marginRight: 28 }}>
