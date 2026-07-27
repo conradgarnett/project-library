@@ -39,6 +39,10 @@ POP, GENS, ELITE, MUT = 120, 40, 12, 0.35
 N_RESTARTS     = 4            # independent evolutionary runs, pooled for selection
 CPCV_DRAWS     = 400
 POSITION_MODE  = "long_flat"  # long or flat; realistic trend-timing, no shorting
+VOL_WINDOW     = 20
+# volatility-target grid (annualized); the level is chosen by out-of-sample
+# block-CV on the search region, never by the holdout.
+VOL_TARGET_GRID = [None, 0.08, 0.10, 0.12, 0.15]
 import os as _os
 SEED           = int(_os.environ.get("GP_SEED", "11"))
 
@@ -103,19 +107,46 @@ def gather(feats, rets, blocks):
             np.concatenate([rets[a:b] for a, b in blocks]))
 
 
-def eval_tree(tree, feats, rets, ann, mode=POSITION_MODE) -> dict:
+def eval_tree(tree, feats, rets, ann, mode=POSITION_MODE, target_vol=None) -> dict:
     sig = TreeEvaluator.evaluate_tree(tree, feats)
     pos = SignalExecutor.signal_to_position(sig)
-    pos = SignalExecutor.apply_risk_controls(pos, rets, mode=mode, annualization=ann)
+    pos = SignalExecutor.apply_risk_controls(pos, rets, mode=mode, annualization=ann,
+                                             target_vol=target_vol, vol_window=VOL_WINDOW)
     return BacktestEngine.backtest_strategy(pos, rets, annualization=ann)
 
 
-def block_cv(tree, feats, rets, blocks, ann, rng, draws):
+def block_cv(tree, feats, rets, blocks, ann, rng, draws, target_vol=None):
     """Distribution of pooled OOS Sharpe over random block subsets."""
     out = []
     for _ in range(draws):
         chosen = rng.sample(blocks, BLOCKS_PER_DRAW)
-        streams = [eval_tree(tree, feats.iloc[a:b], rets[a:b], ann)["returns"]
+        streams = [eval_tree(tree, feats.iloc[a:b], rets[a:b], ann, target_vol=target_vol)["returns"]
+                   for a, b in sorted(chosen)]
+        streams = [s for s in streams if len(s)]
+        if streams:
+            out.append(BacktestEngine.compute_sharpe(np.concatenate(streams), ann))
+    return np.array(out) if out else np.array([0.0])
+
+
+def ensemble_position(trees, feats):
+    """Equal-weight average of each strategy's position (diversification)."""
+    poss = [SignalExecutor.signal_to_position(TreeEvaluator.evaluate_tree(t, feats))
+            for t in trees]
+    return np.mean(poss, axis=0)
+
+
+def eval_ensemble(trees, feats, rets, ann, target_vol=None) -> dict:
+    pos = ensemble_position(trees, feats)
+    pos = SignalExecutor.apply_risk_controls(pos, rets, mode=POSITION_MODE, annualization=ann,
+                                             target_vol=target_vol, vol_window=VOL_WINDOW)
+    return BacktestEngine.backtest_strategy(pos, rets, annualization=ann)
+
+
+def block_cv_ens(trees, feats, rets, blocks, ann, rng, draws, target_vol=None):
+    out = []
+    for _ in range(draws):
+        chosen = rng.sample(blocks, BLOCKS_PER_DRAW)
+        streams = [eval_ensemble(trees, feats.iloc[a:b], rets[a:b], ann, target_vol)["returns"]
                    for a, b in sorted(chosen)]
         streams = [s for s in streams if len(s)]
         if streams:
@@ -153,6 +184,7 @@ def main() -> None:
             feature_names=sf.columns.tolist(), population_size=POP,
             elite_size=ELITE, mutation_rate=MUT, annualization=ann,
             initial_capital=10_000, position_mode=POSITION_MODE,
+            target_vol=0.12, vol_window=VOL_WINDOW,   # evolve in the vol-targeted regime
         )
         eng.initialize_population()
         for g in range(GENS):
@@ -165,26 +197,41 @@ def main() -> None:
             candidates.setdefault(s.get_expr(), s.tree)
         print(f"  restart {restart+1}/{N_RESTARTS}: pooled candidates={len(candidates)}")
 
-    # ── SELECT by block-CV on the search region only (holdout untouched) ───────
-    sel_rng = random.Random(9999)
-    scored = []
+    # ── SELECT by block-CV on the search region only (holdout never consulted) ─
+    # 1) rank individual formulas by OOS robustness (each at vol_target=0.12)
+    ranked = []
     for expr, tree in candidates.items():
-        s = block_cv(tree, sf, sr, blocks, ann, sel_rng, draws=120)
-        scored.append((robust_score(s), float(np.median(s)), expr, tree))
-    scored.sort(reverse=True)
-    best_score, best_med, best_expr, best_tree = scored[0]
+        s = block_cv(tree, sf, sr, blocks, ann, random.Random(9999), draws=60, target_vol=0.12)
+        ranked.append((robust_score(s), expr, tree))
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    top_trees = [t for _, _, t in ranked[:8]]
+
+    # 2) jointly pick ensemble size (diversification) and vol-target by block-CV
+    scored = []
+    for k in (1, 3, 5, 8):
+        trees_k = top_trees[:k]
+        for tv in VOL_TARGET_GRID:
+            s = block_cv_ens(trees_k, sf, sr, blocks, ann, random.Random(9999), draws=80, target_vol=tv)
+            scored.append((robust_score(s), float(np.median(s)), k, tv))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best_score, best_med, best_k, best_tv = scored[0]
+    champ_trees = top_trees[:best_k]
+    best_expr = " ; ".join(t.to_expr() for t in champ_trees) if best_k > 1 else champ_trees[0].to_expr()
+    print(f"selected ensemble_size={best_k}  vol_target={best_tv} by out-of-sample block-CV")
 
     # ── profile champion + single honest holdout confirmation ──────────────────
-    dist = block_cv(best_tree, sf, sr, blocks, ann, random.Random(123), CPCV_DRAWS)
-    ho = eval_tree(best_tree, hf, hr, ann)
+    dist = block_cv_ens(champ_trees, sf, sr, blocks, ann, random.Random(123), CPCV_DRAWS, target_vol=best_tv)
+    ho = eval_ensemble(champ_trees, hf, hr, ann, target_vol=best_tv)
     bh = BacktestEngine.benchmark_buy_hold(hr, annualization=ann)
-    naive = eval_tree(best_tree, sf, sr, ann)["sharpe"]
+    naive = eval_ensemble(champ_trees, sf, sr, ann, target_vol=best_tv)["sharpe"]
 
+    TARGET_SHARPE = 1.5
     profitable = ho["total_return"] > 0
     robust = (np.median(dist) > 0) and (np.mean(dist > 0) >= 0.6)
-    usable = (ho["sharpe"] >= bh["sharpe"]) or (
-        ho["total_return"] > 0 and ho["drawdown"] > bh["drawdown"])  # dd less negative
-    ok = profitable and robust and usable
+    # honest overfitting guard: OOS/holdout must not collapse vs in-sample
+    not_overfit = ho["sharpe"] >= 0.7 * naive and np.median(dist) >= 0.7 * naive
+    hits_target = ho["sharpe"] >= TARGET_SHARPE
+    ok = profitable and robust and not_overfit and hits_target
 
     print("\n" + "=" * 64)
     print("CHAMPION:", best_expr[:140])
@@ -198,7 +245,8 @@ def main() -> None:
           f"maxDD {ho['drawdown']*100:5.1f}%")
     print(f"buy & hold     : Sharpe {bh['sharpe']:6.3f}  return {bh['total_return']*100:6.1f}%  "
           f"maxDD {bh['drawdown']*100:5.1f}%")
-    print(f"\nprofitable={profitable}  robust={robust}  usable={usable}  ==> "
+    print(f"\nprofitable={profitable}  robust={robust}  not_overfit={not_overfit}  "
+          f"holdout_sharpe>={TARGET_SHARPE}: {hits_target}  ==> "
           f"{'GOAL MET' if ok else 'not yet'}")
 
     # ── persist the champion so it is actually usable (not just printed) ───────
@@ -206,9 +254,12 @@ def main() -> None:
         import json
         payload = {
             "expression": best_expr,
-            "tree": best_tree.to_dict(),
+            "ensemble": [t.to_dict() for t in champ_trees],
+            "ensemble_size": best_k,
             "features": sf.columns.tolist(),
             "position_mode": POSITION_MODE,
+            "vol_target": best_tv,
+            "vol_window": VOL_WINDOW,
             "seed": SEED,
             "selected_by": "out-of-sample block-CV on search region (holdout untouched)",
             "search_region_sharpe": round(naive, 4),
