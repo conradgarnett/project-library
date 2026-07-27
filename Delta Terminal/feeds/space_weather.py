@@ -110,7 +110,24 @@ async def run_poller(interval: int = 300):
                 except Exception:
                     pass
 
-                # Solar regions
+                # X-ray flux (GOES primary, 0.1–0.8nm long channel)
+                try:
+                    async with session.get(
+                        f"{BASE}/json/goes/primary/xrays-1-day.json",
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            longs = [row for row in data
+                                     if isinstance(row, dict)
+                                     and row.get("energy") == "0.1-0.8nm"
+                                     and row.get("flux") is not None]
+                            if longs:
+                                _state.x_ray_flux = float(longs[-1]["flux"])
+                except Exception:
+                    pass
+
+                # Solar regions — list of dicts keyed by observed_date/region/…
                 try:
                     async with session.get(
                         f"{BASE}/json/solar_regions.json",
@@ -118,16 +135,19 @@ async def run_poller(interval: int = 300):
                     ) as r:
                         if r.status == 200:
                             data = await r.json()
+                            rows = [row for row in (data if isinstance(data, list) else [])
+                                    if isinstance(row, dict) and row.get("region")]
+                            latest = max((row.get("observed_date") or "" for row in rows), default="")
                             _state.solar_regions = [
                                 {
-                                    "region":  row[0],
-                                    "lat":     row[1],
-                                    "lon":     row[2],
-                                    "class":   row[3],
-                                    "flare_class": row[5] if len(row)>5 else "",
+                                    "region":      row.get("region"),
+                                    "lat":         row.get("latitude"),
+                                    "lon":         row.get("longitude"),
+                                    "class":       row.get("spot_class") or "",
+                                    "flare_class": row.get("mag_class") or "",
                                 }
-                                for row in (data[1:] if isinstance(data,list) else [])[:15]
-                            ]
+                                for row in rows if row.get("observed_date") == latest
+                            ][:15]
                 except Exception:
                     pass
 

@@ -64,27 +64,31 @@ async def run_poller(interval: int = 3600):
                 await asyncio.sleep(0.5)
                 stats_raw = await _get(session, "/bgp/routes/stats")
 
-            # Parse leak events
+            # Parse leak events — API shape: result.events, snake_case fields
+            # (id, leak_asn, leak_count, peer_count, origin_count, leak_seg,
+            #  detected_ts, countries)
             bgp_leaks = []
-            for event in (leaks_raw.get("leaks", {}).get("events") or []):
+            for event in (leaks_raw.get("events") or []):
+                seg = event.get("leak_seg") or []
                 bgp_leaks.append({
                     "id":         event.get("id", ""),
-                    "date":       (event.get("startTime", "") or "")[:10],
-                    "leak_asn":   event.get("leakAsn", 0),
-                    "prefixes":   event.get("affectedPrefixes", 0),
-                    "peers":      event.get("leakPeers", 0),
+                    "date":       (event.get("detected_ts", "") or "")[:10],
+                    "leak_asn":   event.get("leak_asn", 0),
+                    "prefixes":   event.get("leak_count", 0),
+                    "peers":      event.get("peer_count", 0),
                     "countries":  event.get("countries", []),
-                    "origin_asn": (event.get("leakSegmentAses") or [{}])[0].get("asn", ""),
+                    "origin_asn": seg[0] if seg else "",
                 })
 
-            # Parse BGP route stats — shape varies; normalize
-            stats = stats_raw.get("stats") or stats_raw
+            # Parse BGP route stats — API shape: result.stats with
+            # distinct_prefixes / distinct_origins / routes_valid / routes_invalid
+            stats = stats_raw.get("stats") or {}
             bgp_stats = {
-                "total_prefixes":   stats.get("totalDistinctPrefixes", stats.get("distinct_origins", 0)),
-                "distinct_origins": stats.get("totalDistinctOrigins", stats.get("distinct_prefixes", 0)),
-                "invalid_routes":   stats.get("totalInvalidRoutes",   stats.get("invalid_routes",   0)),
-                "rpki_valid":       stats.get("totalRPKIValid",        stats.get("rpki_valid",        0)),
-                "rpki_invalid":     stats.get("totalRPKIInvalid",      stats.get("rpki_invalid",      0)),
+                "total_prefixes":   stats.get("distinct_prefixes", 0),
+                "distinct_origins": stats.get("distinct_origins", 0),
+                "invalid_routes":   stats.get("routes_invalid", 0),
+                "rpki_valid":       stats.get("routes_valid", 0),
+                "rpki_invalid":     stats.get("routes_invalid", 0),
             }
 
             _state.bgp_leaks = bgp_leaks

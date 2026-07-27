@@ -93,7 +93,7 @@
     useEffect(() => {
       if (!ticker) return;
       setLoading(true); setErr(null); setArticles([]);
-      fetch(`http://localhost:8000/api/ticker-news?symbol=${encodeURIComponent(ticker)}&days=7`)
+      fetch(`/api/ticker-news?symbol=${encodeURIComponent(ticker)}&days=7`)
         .then(r => r.json())
         .then(d => { setArticles(d.articles || []); setLoading(false); })
         .catch(e => { setErr(String(e)); setLoading(false); });
@@ -844,7 +844,7 @@
 
     useEffect(() => {
       const t0 = performance.now();
-      fetch('http://localhost:8000/api/markets')
+      fetch('/api/markets')
         .then(() => setPing(Math.round(performance.now() - t0)))
         .catch(() => setPing(null));
     }, []);
@@ -1337,7 +1337,7 @@
 
   function camSrc(cam, tick) {
     const base = cam.proxy
-      ? `http://localhost:8000/api/camera-proxy?url=${encodeURIComponent(cam.url)}`
+      ? `/api/camera-proxy?url=${encodeURIComponent(cam.url)}`
       : cam.url;
     // Append tick as cache-buster — forces browser to re-fetch the image
     const sep = base.includes('?') ? '&' : '?';

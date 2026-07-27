@@ -49,17 +49,23 @@ def compute():
     eq_st      = eq_feed.get_equity()
 
     # ── macro regime ─────────────────────────────────────────────────────────
+    # fred_feed keys its series dict by display name ("10Y-2Y Spread"), not
+    # series ID — translate via SID_TO_NAME or every lookup silently misses
+    # and the model runs on hardcoded defaults.
     series = getattr(fred_st, 'series', {})
 
+    def _fred_obj(code):
+        return series.get(code) or series.get(fred_feed.SID_TO_NAME.get(code, ""))
+
     def fred_val(code):
-        d = series.get(code)
+        d = _fred_obj(code)
         if not d:
             return None
         v = d.get('value')
         return _safe(v, None) if v is not None else None
 
     def fred_trend(code, n=4):
-        d = series.get(code)
+        d = _fred_obj(code)
         if not d:
             return 0.0
         return _safe(d.get('change', 0.0), 0.0)
@@ -615,17 +621,21 @@ async def compute_ticker(symbol: str) -> dict:
     eq_st     = eq_feed.get_equity()
 
     # ── macro context (identical to compute()) ────────────────────────────────
+    # See compute(): fred series are keyed by display name, not series ID.
     series = getattr(fred_st, 'series', {})
 
+    def _fred_obj(code):
+        return series.get(code) or series.get(fred_feed.SID_TO_NAME.get(code, ""))
+
     def fred_val(code):
-        d = series.get(code)
+        d = _fred_obj(code)
         if not d:
             return None
         v = d.get('value')
         return _safe(v, None) if v is not None else None
 
     def fred_trend(code, n=4):
-        d = series.get(code)
+        d = _fred_obj(code)
         if not d:
             return 0.0
         return _safe(d.get('change', 0.0), 0.0)

@@ -104,14 +104,22 @@ async def run_poller(interval: int = 900):
                 except Exception:
                     pass
 
-                # Ransomware.live
+                # Ransomware.live — the old api.ransomware.live/recentvictims
+                # endpoint is gone (404); the full victim dump on
+                # data.ransomware.live still works. It's large (~15MB), so
+                # sort by discovery date and keep the newest 30.
                 try:
                     async with session.get(
-                        "https://api.ransomware.live/recentvictims",
-                        timeout=aiohttp.ClientTimeout(total=10)
+                        "https://data.ransomware.live/victims.json",
+                        timeout=aiohttp.ClientTimeout(total=30)
                     ) as r:
                         if r.status == 200:
-                            d = await r.json()
+                            d = await r.json(content_type=None)
+                            victims = sorted(
+                                (v for v in d if isinstance(v, dict)),
+                                key=lambda v: v.get("discovered", ""),
+                                reverse=True,
+                            ) if isinstance(d, list) else []
                             _state.ransomware = [
                                 {
                                     "victim":  v.get("post_title",""),
@@ -120,7 +128,7 @@ async def run_poller(interval: int = 900):
                                     "date":    v.get("discovered",""),
                                     "website": v.get("website",""),
                                 }
-                                for v in (d[:30] if isinstance(d, list) else [])
+                                for v in victims[:30]
                             ]
                 except Exception:
                     pass

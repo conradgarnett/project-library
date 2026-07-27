@@ -1,10 +1,17 @@
-textual>=0.52.0
+# Server (server.py + feeds/)
+fastapi>=0.110.0
+uvicorn>=0.29.0
 aiohttp>=3.9.0
-yfinance>=0.2.36
-feedparser>=6.0.10
 websockets>=12.0
-pyais>=2.8.0
+requests>=2.31.0
+feedparser>=6.0.10
+yfinance>=0.2.36
+FlightRadarAPI>=1.3.25
 sgp4>=2.23
-rich>=13.7.0
 pandas>=2.0.0
 numpy>=1.24.0
+
+# Legacy TUI prototypes only (prototyping/) — not needed by the server
+# textual>=0.52.0
+# rich>=13.7.0
+# pyais>=2.8.0

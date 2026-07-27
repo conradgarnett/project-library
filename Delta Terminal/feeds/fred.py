@@ -251,19 +251,35 @@ _FRED_CALLS = [
 ]
 
 
+# BLS v1 (no key) allows only 25 requests/day. These are monthly series, so
+# fetch them at most every 12h (4 req/day) and reuse the cached values on the
+# hourly FRED refresh in between.
+_BLS_REFRESH = 12 * 3600
+_bls_cache: dict = {"ts": 0.0, "unrate": None, "cpi": None}
+
+
 async def run_poller(interval: int = 3600):
     global _state
     while True:
         try:
             async with aiohttp.ClientSession() as session:
                 # Free sources run in parallel (different providers, no shared rate limit)
-                unrate_r, cpi_r, gdp_r, ff_r = await asyncio.gather(
-                    _bls_latest(session, "LNS14000000"),   # Unemployment
-                    _bls_yoy(session,   "CUUR0000SA0"),    # CPI YoY
-                    _wb_gdp(session),                      # GDP growth
-                    _ff_from_futures(),                    # Fed Funds implied
-                    return_exceptions=True,
-                )
+                if time.time() - _bls_cache["ts"] >= _BLS_REFRESH:
+                    unrate_r, cpi_r, gdp_r, ff_r = await asyncio.gather(
+                        _bls_latest(session, "LNS14000000"),   # Unemployment
+                        _bls_yoy(session,   "CUUR0000SA0"),    # CPI YoY
+                        _wb_gdp(session),                      # GDP growth
+                        _ff_from_futures(),                    # Fed Funds implied
+                        return_exceptions=True,
+                    )
+                    if isinstance(unrate_r, tuple) or isinstance(cpi_r, tuple):
+                        _bls_cache.update(ts=time.time(), unrate=unrate_r, cpi=cpi_r)
+                else:
+                    unrate_r, cpi_r = _bls_cache["unrate"], _bls_cache["cpi"]
+                    gdp_r, ff_r = await asyncio.gather(
+                        _wb_gdp(session), _ff_from_futures(),
+                        return_exceptions=True,
+                    )
 
                 # FRED calls staggered to respect 120 req/min rate limit
                 fred_results = {}

@@ -64,8 +64,14 @@ async def run_poller(interval: int = 10800):   # 3h — FIRMS updates 3x/day
                                     })
                                 except Exception:
                                     continue
+                # Cap the payload: a full world day can be 50k+ hotspots
+                # (multi-MB JSON responses) — keep the strongest fires
+                total = len(hotspots)
+                if total > 5000:
+                    hotspots.sort(key=lambda h: h["frp"], reverse=True)
+                    hotspots = hotspots[:5000]
                 _state.hotspots = hotspots
-                _state.count    = len(hotspots)
+                _state.count    = total
                 _state.updated  = time.time()
                 _state.error    = None
             except Exception as e:

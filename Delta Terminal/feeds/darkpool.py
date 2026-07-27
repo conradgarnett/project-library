@@ -5,6 +5,7 @@ Short sale volume — FINRA RegSho daily data via api.finra.org (free, no key).
 """
 import asyncio, aiohttp, time
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Optional
 
 @dataclass
@@ -21,19 +22,40 @@ def get_darkpool():
 
 FINRA_REGSHO = "https://api.finra.org/data/group/otcmarket/name/regshoDaily"
 
+async def _fetch_regsho_day(session: aiohttp.ClientSession, day: str) -> list:
+    """Fetch one trading day's RegSho records via a date filter.
+    A plain GET with only ?limit returns the OLDEST partition (months stale);
+    FINRA requires an EQUAL compareFilter on tradeReportDate for current data."""
+    body = {
+        "limit": 5000,
+        "compareFilters": [{
+            "compareType": "EQUAL",
+            "fieldName":   "tradeReportDate",
+            "fieldValue":  day,
+        }],
+    }
+    async with session.post(
+        FINRA_REGSHO, json=body,
+        headers={"Accept": "application/json"},
+        timeout=aiohttp.ClientTimeout(total=20),
+    ) as r:
+        if r.status != 200:
+            return []
+        data = await r.json(content_type=None)
+        return data if isinstance(data, list) else []
+
+
 async def _fetch_regsho(session: aiohttp.ClientSession) -> list:
     """FINRA RegSho daily short sale volume — free, no key required."""
     try:
         rows = []
-        # Fetch 500 records, aggregate by symbol
-        async with session.get(
-            f"{FINRA_REGSHO}?limit=500",
-            headers={"Accept": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=15),
-        ) as r:
-            if r.status != 200:
-                return []
-            data = await r.json(content_type=None)
+        # Walk back from today to find the most recent trading day with data
+        data = []
+        for back in range(7):
+            day = (date.today() - timedelta(days=back)).isoformat()
+            data = await _fetch_regsho_day(session, day)
+            if data:
+                break
 
         # Aggregate by symbol (multiple reporting facilities per symbol)
         by_sym: dict = {}
@@ -61,37 +83,33 @@ async def _fetch_regsho(session: aiohttp.ClientSession) -> list:
         return []
 
 
-async def _derive_prints(session: aiohttp.ClientSession) -> list:
-    """Derive large block prints from options flow unusual activity."""
+def _derive_prints() -> list:
+    """Derive large block prints from options flow unusual activity.
+    Reads the options_flow feed state directly — no reason to loop back
+    through our own HTTP server on a hardcoded port."""
     try:
-        async with session.get(
-            "http://localhost:8000/api/options-flow?type=",
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as r:
-            if r.status != 200:
-                return []
-            d = await r.json()
-            unusual = d.get("unusual", [])
-            # Large premium options = institutional block activity
-            blocks = [
-                {
-                    "date":     u.get("expiry", ""),
-                    "ticker":   u.get("ticker", ""),
-                    "type":     "CALL" if u.get("type") == "C" else "PUT",
-                    "strike":   u.get("strike"),
-                    "expiry":   u.get("expiry"),
-                    "volume":   u.get("volume"),
-                    "premium_k": u.get("premium_k"),
-                    "value":    u.get("premium_k", 0) * 1000,
-                    "iv_pct":   u.get("iv_pct"),
-                    "itm":      u.get("itm"),
-                    "venue":    "OPTIONS",
-                }
-                for u in unusual
-                if u.get("premium_k", 0) >= 50  # $50K+ premium = institutional
-            ]
-            blocks.sort(key=lambda x: x["premium_k"], reverse=True)
-            return blocks[:80]
+        from feeds import options_flow
+        unusual = options_flow.get_options_flow().unusual
+        # Large premium options = institutional block activity
+        blocks = [
+            {
+                "date":     u.get("expiry", ""),
+                "ticker":   u.get("ticker", ""),
+                "type":     "CALL" if u.get("type") == "C" else "PUT",
+                "strike":   u.get("strike"),
+                "expiry":   u.get("expiry"),
+                "volume":   u.get("volume"),
+                "premium_k": u.get("premium_k"),
+                "value":    u.get("premium_k", 0) * 1000,
+                "iv_pct":   u.get("iv_pct"),
+                "itm":      u.get("itm"),
+                "venue":    "OPTIONS",
+            }
+            for u in unusual
+            if u.get("premium_k", 0) >= 50  # $50K+ premium = institutional
+        ]
+        blocks.sort(key=lambda x: x["premium_k"], reverse=True)
+        return blocks[:80]
     except Exception:
         return []
 
@@ -103,11 +121,8 @@ async def run_poller(interval: int = 3600):
             async with aiohttp.ClientSession(
                 headers={"User-Agent": "OpenBloombergTerminal/2.0"}
             ) as session:
-                ats_vol, prints = await asyncio.gather(
-                    _fetch_regsho(session),
-                    _derive_prints(session),
-                )
-                _state.prints  = prints
+                ats_vol = await _fetch_regsho(session)
+                _state.prints  = _derive_prints()
                 _state.ats_vol = ats_vol
                 _state.updated = time.time()
                 _state.error   = None

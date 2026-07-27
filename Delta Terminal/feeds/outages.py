@@ -6,7 +6,7 @@ BGPView.io (free, no key): global BGP infrastructure statistics.
 """
 import asyncio, aiohttp, time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 RIPE_STAT = "https://stat.ripe.net/data"
@@ -50,12 +50,16 @@ def get_outages():
 async def _fetch_bgp_updates(session: aiohttp.ClientSession) -> list:
     """BGP announcements and withdrawals for the top 3 transit ASNs (last 2h)."""
     events = []
+    # RIPE Stat requires ISO 8601 timestamps — relative forms like "2h" fail
+    now_dt = datetime.now(timezone.utc)
+    start  = (now_dt - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+    end    = now_dt.strftime("%Y-%m-%dT%H:%M")
     for asn in TRANSIT_ASNS[:3]:
         try:
             async with session.get(
                 f"{RIPE_STAT}/bgp-updates/data.json",
-                params={"resource": asn, "starttime": "2h", "endtime": "now"},
-                timeout=aiohttp.ClientTimeout(total=12),
+                params={"resource": asn, "starttime": start, "endtime": end},
+                timeout=aiohttp.ClientTimeout(total=25),
             ) as r:
                 if r.status != 200:
                     continue
