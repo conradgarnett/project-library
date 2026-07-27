@@ -128,7 +128,8 @@ class ConnectionManager:
         )
 
     async def broadcast(self, event: str, data: dict):
-        msg = json.dumps({"event": event, "data": data, "ts": time.time()})
+        msg = json.dumps({"event": event, "data": _scrub_nan(data), "ts": time.time()},
+                         allow_nan=False)
         dead = []
         for ws in self.active:
             try:
@@ -389,7 +390,31 @@ async def _broadcast_loop():
 
 # ── app ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Open Bloomberg Terminal API", version="1.0.0", lifespan=lifespan)
+import math
+
+def _scrub_nan(o):
+    """Recursively replace non-finite floats (NaN/Inf) with None.
+    Upstream feeds (FlightRadar24 altitude/speed, options greeks) occasionally
+    emit NaN, which FastAPI's default encoder rejects — 500ing the endpoint."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _scrub_nan(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_scrub_nan(v) for v in o]
+    return o
+
+
+class SafeJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(
+            _scrub_nan(content), ensure_ascii=False, allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
+app = FastAPI(title="Open Bloomberg Terminal API", version="1.0.0",
+              lifespan=lifespan, default_response_class=SafeJSONResponse)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
@@ -1194,7 +1219,7 @@ async def camera_proxy(url: str):
 async def websocket_endpoint(ws: WebSocket):
     await mgr.connect(ws)
     # Send full current state immediately on connect
-    await ws.send_text(json.dumps({
+    await ws.send_text(json.dumps(_scrub_nan({
         "event": "init",
         "data": {
             "markets": {
@@ -1204,7 +1229,7 @@ async def websocket_endpoint(ws: WebSocket):
             "crypto": {"ticks": {k: _ser_crypto(v) for k, v in _crypto_ticks.items()}},
         },
         "ts": time.time(),
-    }))
+    }), allow_nan=False))
     try:
         while True:
             await ws.receive_text()  # keep alive, client can send pings
