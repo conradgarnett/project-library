@@ -2,7 +2,10 @@
 // Exposes window.DeltaLive
 
 (function () {
-  const API = 'http://localhost:8000/api';
+  // Use the origin the page was served from; only fall back to localhost when
+  // opened directly from disk (file://)
+  const API = (window.location.origin && window.location.origin.startsWith('http')
+    ? window.location.origin : 'http://localhost:8000') + '/api';
 
   async function get(path) {
     const r = await fetch(API + path, { signal: AbortSignal.timeout(4000) });

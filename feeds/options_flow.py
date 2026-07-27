@@ -29,7 +29,7 @@ WATCHLIST = [
     "COIN","MSTR","HOOD",                            # crypto proxies
     "PLTR","SOFI","RBLX",                            # high-IV names
     "GLD","SLV","USO","UNG",                         # commodities ETFs
-    "VIX",                                           # volatility
+    "^VIX",                                          # volatility (Yahoo index symbol)
 ]
 
 MIN_VOLUME    = 500     # minimum contracts traded today

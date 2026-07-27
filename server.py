@@ -30,7 +30,7 @@ if _env_file.exists():
             _k, _v = _line.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip())
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -64,10 +64,11 @@ from feeds import cmc as cmc_feed
 from feeds import gdelt as gdelt_feed
 from feeds import hackernews as hn_feed
 from feeds import clinical_trials as ct_feed
+from feeds import futures as futures_feed
 
 # ── refresh intervals ────────────────────────────────────────────────────────
 REFRESH_MARKET        = 5
-REFRESH_AIRCRAFT      = 15
+REFRESH_AIRCRAFT      = 30
 REFRESH_SHIPS         = 30
 REFRESH_SPACE         = 60
 REFRESH_WEATHER       = 300
@@ -109,6 +110,7 @@ REFRESH_CLOUDFLARE    = 3600
 REFRESH_GDELT         = 1800
 REFRESH_HN            = 600
 REFRESH_CT            = 3600
+REFRESH_FUTURES       = 600
 
 # ── WebSocket connection manager ─────────────────────────────────────────────
 
@@ -126,7 +128,8 @@ class ConnectionManager:
         )
 
     async def broadcast(self, event: str, data: dict):
-        msg = json.dumps({"event": event, "data": data, "ts": time.time()})
+        msg = json.dumps({"event": event, "data": _scrub_nan(data), "ts": time.time()},
+                         allow_nan=False)
         dead = []
         for ws in self.active:
             try:
@@ -307,6 +310,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(gdelt_feed.run_poller(REFRESH_GDELT)),
         asyncio.create_task(hn_feed.run_poller(REFRESH_HN)),
         asyncio.create_task(ct_feed.run_poller(REFRESH_CT)),
+        asyncio.create_task(futures_feed.run_poller(REFRESH_FUTURES)),
         asyncio.create_task(_broadcast_loop()),
     ]
     yield
@@ -316,6 +320,7 @@ async def lifespan(app: FastAPI):
 
 _market_quotes: dict = {}
 _crypto_ticks: dict  = {}
+_START_TIME = time.time()
 
 
 async def _market_loop():
@@ -332,13 +337,15 @@ async def _market_loop():
 
 
 def _on_crypto(ticks: dict):
+    # Called from crypto.run_stream's poll coroutine, so we're already on the loop.
     global _crypto_ticks
     _crypto_ticks = ticks
-    asyncio.get_event_loop().call_soon_threadsafe(
-        lambda: asyncio.ensure_future(mgr.broadcast("crypto", {
+    try:
+        asyncio.get_running_loop().create_task(mgr.broadcast("crypto", {
             "ticks": {k: _ser_crypto(v) for k, v in ticks.items()}
         }))
-    )
+    except RuntimeError:
+        pass  # no running loop (shutdown)
 
 
 async def _broadcast_loop():
@@ -383,7 +390,31 @@ async def _broadcast_loop():
 
 # ── app ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Open Bloomberg Terminal API", version="1.0.0", lifespan=lifespan)
+import math
+
+def _scrub_nan(o):
+    """Recursively replace non-finite floats (NaN/Inf) with None.
+    Upstream feeds (FlightRadar24 altitude/speed, options greeks) occasionally
+    emit NaN, which FastAPI's default encoder rejects — 500ing the endpoint."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _scrub_nan(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_scrub_nan(v) for v in o]
+    return o
+
+
+class SafeJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(
+            _scrub_nan(content), ensure_ascii=False, allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
+app = FastAPI(title="Open Bloomberg Terminal API", version="1.0.0",
+              lifespan=lifespan, default_response_class=SafeJSONResponse)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
@@ -527,7 +558,7 @@ async def get_status():
     return {
         "server": "Open Bloomberg Terminal",
         "version": "1.0.0",
-        "uptime": time.time(),
+        "uptime": round(time.time() - _START_TIME, 1),
         "feeds": {
             "markets":     len(_market_quotes) > 0,
             "crypto":      len(_crypto_ticks) > 0,
@@ -636,6 +667,19 @@ async def get_gdelt():
 async def get_hackernews():
     s = hn_feed.get_hackernews()
     return {"stories": s.stories, "updated": s.updated, "error": s.error}
+
+@app.get("/api/futures")
+async def get_futures():
+    s = futures_feed.get_futures()
+    return {
+        "quotes":   s.quotes,
+        "groups":   s.groups,
+        "cot":      s.cot,
+        "cot_date": s.cot_date,
+        "updated":  s.updated,
+        "error":    s.error,
+    }
+
 
 @app.get("/api/clinical-trials")
 async def get_clinical_trials():
@@ -777,7 +821,8 @@ async def analyze_ticker(symbol: str):
         return {"error": str(e), "symbol": symbol.upper()}
 
 @app.get("/api/equity/{symbol}")
-async def get_equity_chart(symbol: str, interval: str = "5m", range_: str = "1d"):
+async def get_equity_chart(symbol: str, interval: str = "5m",
+                           range_: str = Query("1d", alias="range")):
     """Proxy Yahoo Finance chart data — avoids CORS from browser."""
     import aiohttp
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -979,25 +1024,26 @@ async def get_neo(days: int = 7):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                if r.status == 200:
-                    raw = await r.json()
-                    objects = []
-                    for date_str, neos in raw.get("near_earth_objects", {}).items():
-                        for n in neos:
-                            ca = n.get("close_approach_data", [{}])[0]
-                            objects.append({
-                                "name":       n.get("name",""),
-                                "id":         n.get("id",""),
-                                "hazardous":  n.get("is_potentially_hazardous_asteroid", False),
-                                "diam_min_m": n.get("estimated_diameter",{}).get("meters",{}).get("estimated_diameter_min",0),
-                                "diam_max_m": n.get("estimated_diameter",{}).get("meters",{}).get("estimated_diameter_max",0),
-                                "miss_km":    float(ca.get("miss_distance",{}).get("kilometers",0)),
-                                "miss_lunar": float(ca.get("miss_distance",{}).get("lunar",0)),
-                                "velocity_kph": float(ca.get("relative_velocity",{}).get("kilometers_per_hour",0)),
-                                "approach_date": ca.get("close_approach_date",""),
-                            })
-                    objects.sort(key=lambda x: x["miss_km"])
-                    return {"objects": objects, "count": raw.get("element_count",0)}
+                if r.status != 200:
+                    return {"error": f"NASA NeoWs HTTP {r.status}", "objects": []}
+                raw = await r.json()
+                objects = []
+                for date_str, neos in raw.get("near_earth_objects", {}).items():
+                    for n in neos:
+                        ca = n.get("close_approach_data", [{}])[0]
+                        objects.append({
+                            "name":       n.get("name",""),
+                            "id":         n.get("id",""),
+                            "hazardous":  n.get("is_potentially_hazardous_asteroid", False),
+                            "diam_min_m": n.get("estimated_diameter",{}).get("meters",{}).get("estimated_diameter_min",0),
+                            "diam_max_m": n.get("estimated_diameter",{}).get("meters",{}).get("estimated_diameter_max",0),
+                            "miss_km":    float(ca.get("miss_distance",{}).get("kilometers",0)),
+                            "miss_lunar": float(ca.get("miss_distance",{}).get("lunar",0)),
+                            "velocity_kph": float(ca.get("relative_velocity",{}).get("kilometers_per_hour",0)),
+                            "approach_date": ca.get("close_approach_date",""),
+                        })
+                objects.sort(key=lambda x: x["miss_km"])
+                return {"objects": objects, "count": raw.get("element_count",0)}
     except Exception as e:
         return {"error": str(e), "objects": []}
 
@@ -1141,13 +1187,18 @@ async def get_cloudflare():
     }
 
 
+_CAMERA_PROXY_HOSTS = {"www.ndbc.noaa.gov", "ndbc.noaa.gov"}
+
 @app.get("/api/camera-proxy")
 async def camera_proxy(url: str):
     """Proxy a camera image to avoid CORS issues in the browser."""
     import aiohttp
+    from urllib.parse import urlparse
     from fastapi.responses import Response
-    # only allow http/https image URLs
-    if not url.startswith(("http://", "https://")):
+    # only proxy known camera hosts — an open proxy here would let any page
+    # reach internal addresses through this server (SSRF)
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in _CAMERA_PROXY_HOSTS:
         return Response(status_code=400)
     try:
         async with aiohttp.ClientSession() as session:
@@ -1168,7 +1219,7 @@ async def camera_proxy(url: str):
 async def websocket_endpoint(ws: WebSocket):
     await mgr.connect(ws)
     # Send full current state immediately on connect
-    await ws.send_text(json.dumps({
+    await ws.send_text(json.dumps(_scrub_nan({
         "event": "init",
         "data": {
             "markets": {
@@ -1178,13 +1229,22 @@ async def websocket_endpoint(ws: WebSocket):
             "crypto": {"ticks": {k: _ser_crypto(v) for k, v in _crypto_ticks.items()}},
         },
         "ts": time.time(),
-    }))
+    }), allow_nan=False))
     try:
         while True:
             await ws.receive_text()  # keep alive, client can send pings
     except WebSocketDisconnect:
+        pass
+    finally:
         mgr.disconnect(ws)
 
+
+# Serve delta static files at root so relative .jsx paths resolve.
+# Must be registered LAST: a "/" mount matches every path, so any route added
+# after it would be unreachable.
+_delta = Path(__file__).parent / "static" / "delta"
+if _delta.exists():
+    app.mount("/", StaticFiles(directory=str(_delta), html=True), name="delta-root")
 
 # ── entry point ───────────────────────────────────────────────────────────────
 
@@ -1195,9 +1255,3 @@ if __name__ == "__main__":
     print("  Docs:      http://localhost:8000/docs")
     print("  WebSocket: ws://localhost:8000/ws\n")
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False, log_level="warning")
-
-# Serve delta static files at root so relative .jsx paths resolve
-from fastapi.staticfiles import StaticFiles as _SF
-_delta = Path(__file__).parent / "static" / "delta"
-if _delta.exists():
-    app.mount("/", _SF(directory=str(_delta), html=True), name="delta-root")

@@ -1,27 +1,21 @@
 """
-Ship tracking — aisstream.io WebSocket (global, free key) with regional REST fallback.
+Ship tracking — aisstream.io WebSocket (global, free key required).
 
-Global coverage: set AISSTREAM_KEY in .env (free at https://aisstream.io)
-Without a key: Norwegian (Kystverket) and Danish (DMA) coastal waters only.
+Set AISSTREAM_KEY in .env (free at https://aisstream.io). The old no-key
+regional fallbacks (Kystverket, Danish Maritime Authority) were removed —
+both public REST endpoints now return 404.
 """
 
 import asyncio
 import os
 import json
 import time
-import aiohttp
 import websockets
 from dataclasses import dataclass, field
 from typing import Optional
 
 AISSTREAM_KEY = os.environ.get("AISSTREAM_KEY", "")
 AISSTREAM_WS  = "wss://stream.aisstream.io/v0/stream"
-
-# Norwegian Coastal Administration — open REST API, no key
-KYSTVERKET_API = "https://api.kystverket.no/ais/v1/boundingbox?north=72&south=57&east=31&west=4&limit=500"
-
-# Danish Maritime Authority — open REST API, no key
-DANISH_AIS = "https://api.dma.dk/v1/vessels?limit=300"
 
 NAVIGATIONAL_STATUS = {
     0: "Under way (engine)", 1: "At anchor", 2: "Not under command",
@@ -186,98 +180,9 @@ async def _run_aisstream():
             await asyncio.sleep(15)
 
 
-async def _fetch_kystverket(session: aiohttp.ClientSession) -> bool:
-    """Norwegian Coastal Administration AIS REST — Norwegian waters, no key."""
-    global _state
-    try:
-        async with session.get(KYSTVERKET_API, timeout=aiohttp.ClientTimeout(total=10)) as r:
-            if r.status != 200:
-                return False
-            data = await r.json(content_type=None)
-            features = data.get("features", [])
-            vessels = []
-            for f in features:
-                p  = f.get("properties", {})
-                gp = (f.get("geometry") or {}).get("coordinates", [None, None])
-                lat = gp[1] if len(gp) > 1 else None
-                lon = gp[0] if len(gp) > 0 else None
-                if lat is None or lon is None:
-                    continue
-                vessels.append(Vessel(
-                    mmsi=str(p.get("mmsi", "")),
-                    name=(p.get("name") or "").strip(),
-                    callsign=(p.get("callsign") or "").strip(),
-                    vessel_type=p.get("shipType", 0),
-                    lat=lat, lon=lon,
-                    speed_kts=p.get("speedOverGround"),
-                    course=p.get("courseOverGround"),
-                    heading=p.get("trueHeading"),
-                    nav_status=p.get("navigationalStatus", 15),
-                    destination=(p.get("destination") or "").strip(),
-                    flag=p.get("countryCode", ""),
-                ))
-            if vessels:
-                _state = ShipState(
-                    vessels=vessels, total=len(vessels),
-                    underway=sum(1 for v in vessels if v.nav_status == 0),
-                    source="kystverket.no (Norway)", updated=time.time(),
-                )
-                return True
-    except Exception:
-        pass
-    return False
-
-
-async def _fetch_danish(session: aiohttp.ClientSession) -> bool:
-    """Danish Maritime Authority open AIS REST."""
-    global _state
-    try:
-        async with session.get(DANISH_AIS, timeout=aiohttp.ClientTimeout(total=10)) as r:
-            if r.status != 200:
-                return False
-            data = await r.json(content_type=None)
-            items = data if isinstance(data, list) else data.get("vessels", [])
-            vessels = []
-            for p in items:
-                lat = p.get("lat") or p.get("latitude")
-                lon = p.get("lon") or p.get("longitude")
-                if lat is None or lon is None:
-                    continue
-                vessels.append(Vessel(
-                    mmsi=str(p.get("mmsi", "")),
-                    name=(p.get("name") or p.get("shipname") or "").strip(),
-                    callsign=(p.get("callsign") or "").strip(),
-                    vessel_type=p.get("shiptype") or p.get("ship_type") or 0,
-                    lat=float(lat), lon=float(lon),
-                    speed_kts=p.get("sog") or p.get("speed"),
-                    course=p.get("cog") or p.get("course"),
-                    heading=p.get("heading") or p.get("true_heading"),
-                    nav_status=p.get("navigational_status") or 15,
-                    destination=(p.get("destination") or "").strip(),
-                    flag=p.get("flag") or p.get("country") or "",
-                ))
-            if vessels:
-                _state = ShipState(
-                    vessels=vessels, total=len(vessels),
-                    underway=sum(1 for v in vessels if (v.speed_kts or 0) > 0.5),
-                    source="dma.dk (Denmark)", updated=time.time(),
-                )
-                return True
-    except Exception:
-        pass
-    return False
-
-
 async def run_poller(interval: int = 30):
     if AISSTREAM_KEY:
         await _run_aisstream()
         return
-
-    # No aisstream key — regional REST APIs (Norway + Denmark)
-    _state.error = "No AISSTREAM_KEY — showing regional data only. Get a free key at aisstream.io"
-    async with aiohttp.ClientSession(headers={"User-Agent": "OpenBloomberg/1.0"}) as session:
-        while True:
-            ok = await _fetch_kystverket(session)
-            if not ok:
-                await _fetch_danish(session)
-            await asyncio.sleep(interval)
+    _state.error = ("No AISSTREAM_KEY — ship tracking disabled. "
+                    "Get a free key at aisstream.io")

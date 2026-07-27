@@ -111,13 +111,19 @@ async def run_poller(interval: int = 30):
     while True:
         try:
             planes = await loop.run_in_executor(None, _fetch_fr24)
-            _state = AircraftState(
-                aircraft=planes,
-                total=len(planes),
-                airborne=sum(1 for p in planes if not p.on_ground),
-                updated=time.time(),
-                source="flightradar24",
-            )
+            # FlightRadar24's public feed throttles: a throttled request comes
+            # back empty. Don't clobber the last-known-good snapshot with 0 —
+            # keep showing the prior planes and just flag staleness.
+            if planes:
+                _state = AircraftState(
+                    aircraft=planes,
+                    total=len(planes),
+                    airborne=sum(1 for p in planes if not p.on_ground),
+                    updated=time.time(),
+                    source="flightradar24",
+                )
+            else:
+                _state.error = "throttled — showing last snapshot"
         except Exception as e:
             _state.error = str(e)
         await asyncio.sleep(interval)

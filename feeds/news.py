@@ -12,33 +12,36 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+# NOTE: feeds.reuters.com is dead (Reuters killed public RSS), rsshub.app AP
+# routes return 403, and Lloyd's List RSS 500s — replaced with Guardian, NPR,
+# Al Jazeera, and gCaptain (all verified live).
 RSS_FEEDS = {
-    "Reuters":         "https://feeds.reuters.com/reuters/topNews",
-    "Reuters Markets": "https://feeds.reuters.com/reuters/businessNews",
-    "BBC World":       "https://feeds.bbci.co.uk/news/world/rss.xml",
-    "BBC Business":    "https://feeds.bbci.co.uk/news/business/rss.xml",
-    "AP News":         "https://rsshub.app/apnews/topics/apf-topnews",
-    "AP Business":     "https://rsshub.app/apnews/topics/apf-business",
-    "FT":              "https://www.ft.com/rss/home",
-    "WSJ":             "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
-    "WSJ Markets":     "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
-    "CNBC":            "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-    "MarketWatch":     "https://feeds.content.dowjones.io/public/rss/mw_topstories",
-    "Ars Technica":    "https://feeds.arstechnica.com/arstechnica/index",
-    "Hacker News":     "https://hnrss.org/frontpage",
-    "SpaceNews":       "https://spacenews.com/feed/",
-    "FlightGlobal":    "https://www.flightglobal.com/rss/",
-    "Lloyd's List":    "https://www.lloydslist.com/rss/",
+    "Guardian World":    "https://www.theguardian.com/world/rss",
+    "Guardian Business": "https://www.theguardian.com/uk/business/rss",
+    "BBC World":         "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "BBC Business":      "https://feeds.bbci.co.uk/news/business/rss.xml",
+    "NPR":               "https://feeds.npr.org/1001/rss.xml",
+    "Al Jazeera":        "https://www.aljazeera.com/xml/rss/all.xml",
+    "FT":                "https://www.ft.com/rss/home",
+    "WSJ":               "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+    "WSJ Markets":       "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "CNBC":              "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "MarketWatch":       "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+    "Ars Technica":      "https://feeds.arstechnica.com/arstechnica/index",
+    "Hacker News":       "https://hnrss.org/frontpage",
+    "SpaceNews":         "https://spacenews.com/feed/",
+    "FlightGlobal":      "https://www.flightglobal.com/rss/",
+    "gCaptain":          "https://gcaptain.com/feed/",
 }
 
 CATEGORIES = {
-    "Top":      ["Reuters", "BBC World", "AP News"],
-    "Markets":  ["Reuters Markets", "WSJ Markets", "CNBC", "MarketWatch", "WSJ"],
-    "Business": ["BBC Business", "FT", "AP Business"],
+    "Top":      ["Guardian World", "BBC World", "NPR", "Al Jazeera"],
+    "Markets":  ["WSJ Markets", "CNBC", "MarketWatch", "WSJ"],
+    "Business": ["BBC Business", "FT", "Guardian Business"],
     "Tech":     ["Ars Technica", "Hacker News"],
     "Space":    ["SpaceNews"],
     "Aviation": ["FlightGlobal"],
-    "Shipping": ["Lloyd's List"],
+    "Shipping": ["gCaptain"],
 }
 
 

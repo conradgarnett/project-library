@@ -1,4 +1,6 @@
-"""Rocket launch data — rocketlaunch.live (free, no key) primary; SpaceDevs fallback."""
+"""Rocket launch data — SpaceDevs LL2 primary (15 upcoming + 10 recent, free
+tier 15 req/hr); rocketlaunch.live fallback (free endpoint caps at 5 upcoming,
+no recent)."""
 import asyncio, aiohttp, time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -83,10 +85,11 @@ def _parse_ll2(l: dict) -> dict:
 
 
 async def _fetch_rll(session: aiohttp.ClientSession) -> tuple[list, list]:
-    """Primary source: rocketlaunch.live — free, no key, no rate limit."""
+    """Fallback: rocketlaunch.live — free, no key, but the free endpoint
+    returns at most 5 upcoming launches regardless of the number requested."""
     upcoming, recent = [], []
     try:
-        async with session.get(f"{RLL_BASE}/next/15",
+        async with session.get(f"{RLL_BASE}/next/5",
             timeout=aiohttp.ClientTimeout(total=12)) as r:
             if r.status == 200:
                 d = await r.json()
@@ -101,8 +104,10 @@ async def _fetch_ll2(session: aiohttp.ClientSession) -> tuple[list, list]:
     """Fallback: SpaceDevs Launch Library 2 — 15 req/hr free tier."""
     upcoming, recent = [], []
     try:
-        async with session.get(f"{LL2_BASE}/launch/upcoming/?limit=15&mode=list",
-            timeout=aiohttp.ClientTimeout(total=15)) as r:
+        # mode=normal: the "list" serializer omits rocket/mission/pad objects,
+        # which _parse_ll2 needs (mission is just a string there)
+        async with session.get(f"{LL2_BASE}/launch/upcoming/?limit=15&mode=normal",
+            timeout=aiohttp.ClientTimeout(total=25)) as r:
             if r.status == 200:
                 d = await r.json()
                 upcoming = [_parse_ll2(l) for l in d.get("results", [])]
@@ -110,8 +115,8 @@ async def _fetch_ll2(session: aiohttp.ClientSession) -> tuple[list, list]:
         pass
     try:
         await asyncio.sleep(2)
-        async with session.get(f"{LL2_BASE}/launch/previous/?limit=10&mode=list",
-            timeout=aiohttp.ClientTimeout(total=15)) as r:
+        async with session.get(f"{LL2_BASE}/launch/previous/?limit=10&mode=normal",
+            timeout=aiohttp.ClientTimeout(total=25)) as r:
             if r.status == 200:
                 d = await r.json()
                 recent = [_parse_ll2(l) for l in d.get("results", [])]
@@ -127,9 +132,10 @@ async def run_poller(interval: int = 1800):
             async with aiohttp.ClientSession(
                 headers={"User-Agent": "OpenBloombergTerminal/2.0"}
             ) as session:
-                upcoming, recent = await _fetch_rll(session)
+                # LL2 first (richer data: 15 upcoming + recent); RLL fallback
+                upcoming, recent = await _fetch_ll2(session)
                 if not upcoming:
-                    upcoming, recent = await _fetch_ll2(session)
+                    upcoming, recent = await _fetch_rll(session)
                 _state.upcoming = upcoming
                 _state.recent   = recent
                 _state.updated  = time.time()

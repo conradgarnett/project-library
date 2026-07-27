@@ -87,6 +87,7 @@
       case 'FRD':  return P.FredPanel         ? <P.FredPanel snap={snap} />         : <NotImplemented code="FRD" name="FRED Macro" />;
       case 'MCR':  return P.FredPanel         ? <P.FredPanel snap={snap} />         : <NotImplemented code="MCR" name="Macro" />;
       case 'COM':  return P.CommoditiesPanel  ? <P.CommoditiesPanel snap={snap} />  : <NotImplemented code="COM" name="Commodities" />;
+      case 'FUT':  return P.FuturesPanel      ? <P.FuturesPanel />                  : <NotImplemented code="FUT" name="Futures" />;
       case 'OFL':  return P.OptionsFlowPanel  ? <P.OptionsFlowPanel snap={snap} />  : <NotImplemented code="OFL" name="Options Flow" />;
       case 'OPT':  return P.OptionsMispricingPanel ? <P.OptionsMispricingPanel /> : <NotImplemented code="OPT" name="Options Mispricing" />;
       case 'OF3':  return P.OrderFlow3DPanel  ? <P.OrderFlow3DPanel snap={snap} />  : <NotImplemented code="OF3" name="Order Flow 3D" />;
@@ -325,7 +326,7 @@
 
     // Real-time tick stream — flash individual rows the moment a trade arrives
     useEffect(() => {
-      const es = new EventSource('http://localhost:8000/api/markets/stream');
+      const es = new EventSource('/api/markets/stream');
       es.onmessage = (e) => {
         if (!e.data || e.data.startsWith(':')) return;
         let tick;
@@ -526,8 +527,6 @@
         {/* TICKER */}
         <div style={{ height: 26, background: 'var(--surface)', borderBottom: '1px solid var(--border)',
           overflow: 'hidden', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-          <div style={{ padding: '0 10px', color: 'var(--cyan)', fontSize: 10, letterSpacing: '.14em',
-            borderRight: '1px solid var(--border)', background: 'var(--surface-2)', height: '100%', display: 'flex', alignItems: 'center' }}>TAPE</div>
           <div className="marquee-track" style={{ paddingLeft: 24, lineHeight: '26px', fontSize: 11 }}>
             {[...ticker, ...ticker].map((t, i) => (
               <span key={i} style={{ marginRight: 28 }}>
