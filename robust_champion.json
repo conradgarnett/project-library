@@ -1,0 +1,90 @@
+{
+  "expression": "sub(sub(add(tanh(dd), sub(ma100, ma20)), vol), tanh(sub(ma100, mom120)))",
+  "tree": {
+    "op": "sub",
+    "left": {
+      "op": "sub",
+      "left": {
+        "op": "add",
+        "left": {
+          "op": "tanh",
+          "left": {
+            "op": "dd",
+            "left": null,
+            "right": null
+          },
+          "right": null
+        },
+        "right": {
+          "op": "sub",
+          "left": {
+            "op": "ma100",
+            "left": null,
+            "right": null
+          },
+          "right": {
+            "op": "ma20",
+            "left": null,
+            "right": null
+          }
+        }
+      },
+      "right": {
+        "op": "vol",
+        "left": null,
+        "right": null
+      }
+    },
+    "right": {
+      "op": "tanh",
+      "left": {
+        "op": "sub",
+        "left": {
+          "op": "ma100",
+          "left": null,
+          "right": null
+        },
+        "right": {
+          "op": "mom120",
+          "left": null,
+          "right": null
+        }
+      },
+      "right": null
+    }
+  },
+  "features": [
+    "ret1",
+    "ret5",
+    "mom10",
+    "mom20",
+    "mom60",
+    "mom120",
+    "ma5",
+    "ma20",
+    "ma50",
+    "ma100",
+    "ma200",
+    "vol",
+    "vol_ratio",
+    "rsi",
+    "dd"
+  ],
+  "position_mode": "long_flat",
+  "seed": 11,
+  "selected_by": "out-of-sample block-CV on search region (holdout untouched)",
+  "search_region_sharpe": 0.9122,
+  "oos_block_sharpe_median": 0.919,
+  "oos_block_sharpe_pct_positive": 1.0,
+  "holdout": {
+    "sharpe": 0.8938,
+    "total_return": 0.3368,
+    "max_drawdown": -0.1004
+  },
+  "buy_hold_holdout": {
+    "sharpe": 1.2262,
+    "total_return": 0.6931,
+    "max_drawdown": -0.1876
+  },
+  "note": "Long/flat SPY trend-timing overlay. Profitable and robust out-of-sample; its edge is drawdown reduction vs buy & hold, not higher total return in bull markets."
+}
