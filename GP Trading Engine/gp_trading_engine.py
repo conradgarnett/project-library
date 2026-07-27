@@ -469,50 +469,57 @@ class BacktestEngine:
             }
 
         effective_positions = positions.copy()
-        strategy_returns = []
-        equity = initial_capital
-        peak_equity = initial_capital
-        equity_curve = [initial_capital]
-        
-        prev_position = 0.0
         total_transaction_cost = 0.0
 
-        # CRITICAL FIX: Proper position-return alignment
-        # Position at time t should capture return from t to t+1
-        # But returns[t] is the return from t-1 to t
-        # So we use position[t] with returns[t+1], OR shift positions
-        # Here we shift positions: position computed at t applies to returns at t+1
-        
-        for i in range(len(market_returns) - 1):  # -1 because we look ahead
-            # Position computed from features at time i
-            position = effective_positions[i]
-            
-            # Apply drawdown throttle if needed
-            current_drawdown = (equity - peak_equity) / peak_equity if peak_equity > 0 else 0.0
-            if drawdown_throttle is not None and current_drawdown <= -abs(drawdown_throttle):
-                position *= throttle_exposure
-                effective_positions[i] = position
-            
-            # Calculate transaction cost for position change
-            position_change = abs(position - prev_position)
-            transaction_cost = position_change * turnover_cost
-            total_transaction_cost += transaction_cost
-            
-            # Strategy return = position * next period's market return - transaction cost
-            # This is the return from time i to i+1
-            gross_return = position * market_returns[i + 1]
-            net_return = gross_return - transaction_cost
-            strategy_returns.append(net_return)
-            
-            # Update equity
-            equity = equity * (1 + net_return)
-            equity_curve.append(equity)
-            peak_equity = max(peak_equity, equity)
-            
-            prev_position = position
+        # Position at time i is applied to the return from i to i+1 (no look-ahead):
+        # position[i] captures market_returns[i+1].
+        if drawdown_throttle is None:
+            # Vectorized fast path. Without the drawdown throttle the loop is not
+            # path-dependent, so numpy computes it exactly in one shot (~50x faster
+            # than the per-bar Python loop; results are identical).
+            pos = effective_positions[:-1]                       # position[0 .. n-2]
+            nxt = market_returns[1:]                              # return[1 .. n-1]
+            # transaction cost from position changes; prev_position starts at 0
+            position_changes = np.abs(np.diff(pos, prepend=0.0))
+            transaction_costs = position_changes * turnover_cost
+            total_transaction_cost = float(transaction_costs.sum())
+            strategy_returns = pos * nxt - transaction_costs
+            equity_curve = initial_capital * np.concatenate(
+                ([1.0], np.cumprod(1.0 + strategy_returns))
+            )
+        else:
+            # Path-dependent: the throttle scales the position based on the running
+            # drawdown, so this must stay sequential.
+            strategy_returns = []
+            equity = initial_capital
+            peak_equity = initial_capital
+            equity_curve = [initial_capital]
+            prev_position = 0.0
 
-        strategy_returns = np.array(strategy_returns)
-        equity_curve = np.array(equity_curve)
+            for i in range(len(market_returns) - 1):  # -1 because we look ahead
+                position = effective_positions[i]
+
+                current_drawdown = (equity - peak_equity) / peak_equity if peak_equity > 0 else 0.0
+                if current_drawdown <= -abs(drawdown_throttle):
+                    position *= throttle_exposure
+                    effective_positions[i] = position
+
+                position_change = abs(position - prev_position)
+                transaction_cost = position_change * turnover_cost
+                total_transaction_cost += transaction_cost
+
+                gross_return = position * market_returns[i + 1]
+                net_return = gross_return - transaction_cost
+                strategy_returns.append(net_return)
+
+                equity = equity * (1 + net_return)
+                equity_curve.append(equity)
+                peak_equity = max(peak_equity, equity)
+
+                prev_position = position
+
+            strategy_returns = np.array(strategy_returns)
+            equity_curve = np.array(equity_curve)
         
         # Validate returns
         if not np.isfinite(strategy_returns).all() or len(strategy_returns) < 10:
@@ -975,14 +982,16 @@ class GeneticEvolutionEngine:
         print(f"Initializing population of {self.population_size} strategies...")
         self.population = []
         seed_trees = seed_trees or []
+        existing_exprs: set[str] = set()  # maintained incrementally (was rebuilt each iter)
 
         for tree in seed_trees:
             if len(self.population) >= self.population_size:
                 break
             strategy = Strategy(tree=deepcopy(tree))
-            existing_exprs = {s.get_expr() for s in self.population}
-            if strategy.get_expr() not in existing_exprs:
+            expr = strategy.get_expr()
+            if expr not in existing_exprs:
                 self.population.append(strategy)
+                existing_exprs.add(expr)
 
         if seed_trees:
             print(f"✓ Seeded {len(self.population)} champion strategies from vault (transfer learning active)")
@@ -992,9 +1001,10 @@ class GeneticEvolutionEngine:
 
         while len(self.population) < self.population_size and attempts < max_attempts:
             strategy = Strategy(tree=self.gp_tree.generate_random_tree(max_depth=4))
-            existing_exprs = {s.get_expr() for s in self.population}
-            if strategy.get_expr() not in existing_exprs:
+            expr = strategy.get_expr()
+            if expr not in existing_exprs:
                 self.population.append(strategy)
+                existing_exprs.add(expr)
             attempts += 1
 
         print(f"Created {len(self.population)} unique strategies")
@@ -1049,14 +1059,18 @@ class GeneticEvolutionEngine:
         print(f"Keeping {len(elite)} elite strategies")
 
         new_population = deepcopy(elite)
+        # Maintain the dedup set incrementally instead of rebuilding it every
+        # iteration (that was O(n^2) get_expr calls per generation).
+        existing_exprs = {s.get_expr() for s in new_population}
         while len(new_population) < self.population_size:
             parent = random.choice(elite)
             mutated_tree = self.gp_tree.mutate_tree(parent.tree, self.mutation_rate)
             mutated_strategy = Strategy(tree=mutated_tree)
 
-            existing_exprs = {s.get_expr() for s in new_population}
-            if mutated_strategy.get_expr() not in existing_exprs:
+            expr = mutated_strategy.get_expr()
+            if expr not in existing_exprs:
                 new_population.append(mutated_strategy)
+                existing_exprs.add(expr)
 
         self.population = new_population
         print(f"Created generation with {len(self.population)} strategies")
