@@ -68,7 +68,7 @@ from feeds import futures as futures_feed
 
 # ── refresh intervals ────────────────────────────────────────────────────────
 REFRESH_MARKET        = 5
-REFRESH_AIRCRAFT      = 15
+REFRESH_AIRCRAFT      = 30
 REFRESH_SHIPS         = 30
 REFRESH_SPACE         = 60
 REFRESH_WEATHER       = 300
