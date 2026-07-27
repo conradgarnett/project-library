@@ -15,3 +15,7 @@ node_modules/
 quant-mind/
 my-vault/
 earnings_vrp/
+
+# Delta Terminal lives on its own branch (delta-terminal); mirrored into main.
+# Present here as a working copy only — not tracked on this branch.
+Delta Terminal/
