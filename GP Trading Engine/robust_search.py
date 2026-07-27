@@ -1,18 +1,22 @@
 """
-Overfitting-resistant GP search.
+Overfitting-resistant GP search for a genuinely usable SPY strategy.
 
-Core idea (requested): don't test every strategy on the same fixed history —
-randomize which data each generation is evaluated on, so a formula can't lock
-onto the quirks of one slice. Done the time-series-correct way:
+Design (anti-overfitting is the priority):
+  1. Randomize evaluation over CONTIGUOUS time blocks each generation (never
+     shuffled rows -> that would leak the future and break momentum/vol).
+  2. Lock a final HOLDOUT (last ~3y) behind an EMBARGO gap; the search never
+     sees it. It is used ONCE, for confirmation only -- never for selection.
+  3. Select the champion by out-of-sample BLOCK CROSS-VALIDATION inside the
+     search region (median block Sharpe with a variance penalty), so we pick
+     for robustness, not for a lucky single fit.
+  4. Richer CAUSAL features (incl. long-horizon trend/regime) + long-or-flat
+     positioning, because the durable edge on SPY is trend-timing: stay long
+     in uptrends, step aside in downtrends to cut drawdown.
 
-  1. Randomize over CONTIGUOUS BLOCKS, never shuffled rows (shuffling rows
-     leaks the future into the past and destroys momentum/vol features).
-  2. Lock a final HOLDOUT segment that the search never sees, with an EMBARGO
-     gap so rolling features can't peek across the boundary.
-  3. Judge the champion on a DISTRIBUTION of out-of-sample block draws plus the
-     locked holdout — the gap between search and holdout Sharpe is the overfit.
-
-This is a drop-in runner; it reuses the engine classes unchanged.
+Success bar (checked on the locked holdout):
+  profitable (positive return) AND robust (positive OOS block median) AND
+  usable (risk-adjusted value vs buy & hold: higher Sharpe OR materially
+  lower drawdown while still profitable).
 """
 from __future__ import annotations
 
@@ -21,120 +25,213 @@ import numpy as np
 import pandas as pd
 
 from gp_trading_engine import (
-    DataLayer, FeatureEngine, GeneticEvolutionEngine, GPTradingEngine,
+    DataLayer, GeneticEvolutionEngine, GPTradingEngine,
     TreeEvaluator, SignalExecutor, BacktestEngine,
 )
 
 # ── config ───────────────────────────────────────────────────────────────────
 SYMBOL, START, INTERVAL = "SPY", "2001-01-01", "1d"
-HOLDOUT_DAYS = 756          # ~3y final test the search never touches
-EMBARGO      = 21           # ~1mo gap so rolling features don't leak across the cut
-N_BLOCKS     = 18           # contiguous blocks the search region is split into
-BLOCKS_PER_DRAW = 6         # each generation sees a random 1/3 of history
-POP, GENS, ELITE, MUT = 60, 25, 8, 0.35
-CPCV_DRAWS = 300            # random block-combos used to profile the champion
-SEED = 7
+HOLDOUT_DAYS   = 756          # ~3y locked final test
+EMBARGO        = 21
+N_BLOCKS       = 24
+BLOCKS_PER_DRAW = 8
+POP, GENS, ELITE, MUT = 120, 40, 12, 0.35
+N_RESTARTS     = 4            # independent evolutionary runs, pooled for selection
+CPCV_DRAWS     = 400
+POSITION_MODE  = "long_flat"  # long or flat; realistic trend-timing, no shorting
+import os as _os
+SEED           = int(_os.environ.get("GP_SEED", "11"))
 
 
-def make_blocks(n_rows: int, n_blocks: int) -> list[tuple[int, int]]:
-    """Contiguous [start, end) index blocks covering [0, n_rows)."""
-    edges = np.linspace(0, n_rows, n_blocks + 1, dtype=int)
-    return [(int(edges[i]), int(edges[i + 1])) for i in range(n_blocks)
-            if edges[i + 1] > edges[i]]
+# ── causal features (only past data used at every point) ─────────────────────
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    close = df["Close"]
+    ret = df["returns"]
+    f = pd.DataFrame(index=df.index)
+
+    # momentum across horizons (trend)
+    f["ret1"]   = close.pct_change(1)
+    f["ret5"]   = close.pct_change(5)
+    f["mom10"]  = close.pct_change(10)
+    f["mom20"]  = close.pct_change(20)
+    f["mom60"]  = close.pct_change(60)
+    f["mom120"] = close.pct_change(120)
+
+    # distance from moving averages (trend state), incl. long MAs
+    for w in (5, 20, 50, 100, 200):
+        ma = close.rolling(w).mean()
+        f[f"ma{w}"] = (close - ma) / ma
+
+    # volatility level + regime (short vs long)
+    v20 = ret.rolling(20).std()
+    v60 = ret.rolling(60).std()
+    f["vol"]       = v20
+    f["vol_ratio"] = v20 / v60
+
+    # RSI(14), centered
+    delta = close.diff()
+    up = delta.clip(lower=0).rolling(14).mean()
+    dn = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = up / dn.replace(0, np.nan)
+    f["rsi"] = (100 - 100 / (1 + rs)) / 100 - 0.5
+
+    # distance below trailing 1y high (drawdown state)
+    hi = close.rolling(252).max()
+    f["dd"] = (close - hi) / hi
+
+    f = f.replace([np.inf, -np.inf], np.nan).dropna()
+
+    # causal z-score: expanding stats up to the PRIOR bar only (no look-ahead)
+    mp = 60
+    out = pd.DataFrame(index=f.index)
+    for c in f.columns:
+        mean = f[c].expanding(min_periods=mp).mean().shift(1)
+        std = f[c].expanding(min_periods=mp).std().shift(1)
+        out[c] = (f[c] - mean) / std.where(std > 1e-8)
+    return out.replace([np.inf, -np.inf], np.nan).dropna()
 
 
-def gather(feats: pd.DataFrame, rets: np.ndarray, blocks: list[tuple[int, int]]):
-    """Concatenate the chosen blocks in time order (each block stays contiguous)."""
+# ── helpers ───────────────────────────────────────────────────────────────────
+def make_blocks(n: int, k: int) -> list[tuple[int, int]]:
+    e = np.linspace(0, n, k + 1, dtype=int)
+    return [(int(e[i]), int(e[i + 1])) for i in range(k) if e[i + 1] > e[i]]
+
+
+def gather(feats, rets, blocks):
     blocks = sorted(blocks)
-    fparts = [feats.iloc[a:b] for a, b in blocks]
-    rparts = [rets[a:b] for a, b in blocks]
-    return pd.concat(fparts), np.concatenate(rparts)
+    return (pd.concat([feats.iloc[a:b] for a, b in blocks]),
+            np.concatenate([rets[a:b] for a, b in blocks]))
 
 
-def eval_tree(tree, feats: pd.DataFrame, rets: np.ndarray, ann: float) -> dict:
-    """Same signal->position->backtest pipeline the GA uses, for a fixed tree."""
-    signal = TreeEvaluator.evaluate_tree(tree, feats)
-    position = SignalExecutor.signal_to_position(signal)
-    position = SignalExecutor.apply_risk_controls(position, rets, annualization=ann)
-    return BacktestEngine.backtest_strategy(position, rets, annualization=ann)
+def eval_tree(tree, feats, rets, ann, mode=POSITION_MODE) -> dict:
+    sig = TreeEvaluator.evaluate_tree(tree, feats)
+    pos = SignalExecutor.signal_to_position(sig)
+    pos = SignalExecutor.apply_risk_controls(pos, rets, mode=mode, annualization=ann)
+    return BacktestEngine.backtest_strategy(pos, rets, annualization=ann)
 
 
-def pooled_sharpe(tree, feats, rets, blocks, ann) -> float:
-    """Evaluate per-block and pool the daily return streams, so joins between
-    non-adjacent blocks don't corrupt the metric (Sharpe is return-based)."""
-    streams = []
-    for a, b in sorted(blocks):
-        r = eval_tree(tree, feats.iloc[a:b], rets[a:b], ann)["returns"]
-        if len(r):
-            streams.append(r)
-    if not streams:
-        return 0.0
-    pooled = np.concatenate(streams)
-    return BacktestEngine.compute_sharpe(pooled, ann)
+def block_cv(tree, feats, rets, blocks, ann, rng, draws):
+    """Distribution of pooled OOS Sharpe over random block subsets."""
+    out = []
+    for _ in range(draws):
+        chosen = rng.sample(blocks, BLOCKS_PER_DRAW)
+        streams = [eval_tree(tree, feats.iloc[a:b], rets[a:b], ann)["returns"]
+                   for a, b in sorted(chosen)]
+        streams = [s for s in streams if len(s)]
+        if streams:
+            out.append(BacktestEngine.compute_sharpe(np.concatenate(streams), ann))
+    return np.array(out) if out else np.array([0.0])
+
+
+def robust_score(sharpes: np.ndarray) -> float:
+    """Reward a high, consistent OOS median; penalize dispersion and downside."""
+    return float(np.median(sharpes) - 0.5 * np.std(sharpes)
+                 + 0.5 * (np.mean(sharpes > 0) - 0.5))
 
 
 def main() -> None:
-    random.seed(SEED); np.random.seed(SEED)
-    rng = random.Random(SEED)
-
     ann = GPTradingEngine.annualization_for_interval(INTERVAL)
     data = DataLayer.fetch_spy_data(symbol=SYMBOL, start=START, interval=INTERVAL)
-    feats = FeatureEngine.build_features(data)
+    feats = build_features(data)
     rets = data.loc[feats.index, "returns"].values
     n = len(feats)
 
-    # ── split: [ search region ] [embargo] [ locked holdout ] ──────────────────
     holdout_start = n - HOLDOUT_DAYS
     search_end = holdout_start - EMBARGO
-    search_feats, search_rets = feats.iloc[:search_end], rets[:search_end]
-    hold_feats, hold_rets = feats.iloc[holdout_start:], rets[holdout_start:]
+    sf, sr = feats.iloc[:search_end], rets[:search_end]
+    hf, hr = feats.iloc[holdout_start:], rets[holdout_start:]
+    blocks = make_blocks(len(sf), N_BLOCKS)
+    print(f"bars={n} feats={feats.shape[1]} | search={len(sf)} in {len(blocks)} blocks "
+          f"| locked holdout={len(hf)} | mode={POSITION_MODE}")
 
-    blocks = make_blocks(len(search_feats), N_BLOCKS)
-    print(f"bars={n} | search={len(search_feats)} in {len(blocks)} blocks "
-          f"| embargo={EMBARGO} | locked holdout={len(hold_feats)}")
+    # ── evolve several independent runs, rotating blocks each generation ───────
+    candidates = {}
+    for restart in range(N_RESTARTS):
+        random.seed(SEED + restart); np.random.seed(SEED + restart)
+        rng = random.Random(SEED + restart)
+        eng = GeneticEvolutionEngine(
+            feature_names=sf.columns.tolist(), population_size=POP,
+            elite_size=ELITE, mutation_rate=MUT, annualization=ann,
+            initial_capital=10_000, position_mode=POSITION_MODE,
+        )
+        eng.initialize_population()
+        for g in range(GENS):
+            df, dr = gather(sf, sr, rng.sample(blocks, BLOCKS_PER_DRAW))
+            eng.evaluate_population(df, dr)
+            if g < GENS - 1:
+                eng.evolve_generation()
+        # keep the top distinct formulas from this run as selection candidates
+        for s in eng.get_top_strategies(8):
+            candidates.setdefault(s.get_expr(), s.tree)
+        print(f"  restart {restart+1}/{N_RESTARTS}: pooled candidates={len(candidates)}")
 
-    # ── evolve, rotating the evaluation block-subset every generation ──────────
-    eng = GeneticEvolutionEngine(
-        feature_names=search_feats.columns.tolist(),
-        population_size=POP, elite_size=ELITE, mutation_rate=MUT,
-        annualization=ann, initial_capital=10_000,
-    )
-    eng.initialize_population()
-    for g in range(GENS):
-        draw = rng.sample(blocks, BLOCKS_PER_DRAW)          # random contiguous blocks
-        df, dr = gather(search_feats, search_rets, draw)
-        eng.evaluate_population(df, dr)                       # fitness on THIS draw only
-        if g < GENS - 1:
-            eng.evolve_generation()
-    champ = eng.get_best_strategy()
+    # ── SELECT by block-CV on the search region only (holdout untouched) ───────
+    sel_rng = random.Random(9999)
+    scored = []
+    for expr, tree in candidates.items():
+        s = block_cv(tree, sf, sr, blocks, ann, sel_rng, draws=120)
+        scored.append((robust_score(s), float(np.median(s)), expr, tree))
+    scored.sort(reverse=True)
+    best_score, best_med, best_expr, best_tree = scored[0]
 
-    # ── profile champion: distribution across many random block draws ──────────
-    draws = [pooled_sharpe(champ.tree, search_feats, search_rets,
-                           rng.sample(blocks, BLOCKS_PER_DRAW), ann)
-             for _ in range(CPCV_DRAWS)]
-    draws = np.array(draws)
+    # ── profile champion + single honest holdout confirmation ──────────────────
+    dist = block_cv(best_tree, sf, sr, blocks, ann, random.Random(123), CPCV_DRAWS)
+    ho = eval_tree(best_tree, hf, hr, ann)
+    bh = BacktestEngine.benchmark_buy_hold(hr, annualization=ann)
+    naive = eval_tree(best_tree, sf, sr, ann)["sharpe"]
 
-    # full-search-region Sharpe (what a naive in-sample run would report)
-    naive = eval_tree(champ.tree, search_feats, search_rets, ann)["sharpe"]
-    # the honest number: the locked holdout the search never saw
-    ho = eval_tree(champ.tree, hold_feats, hold_rets, ann)
-    bh = BacktestEngine.benchmark_buy_hold(hold_rets, annualization=ann)
-    beat = float(np.mean(draws > 0))
+    profitable = ho["total_return"] > 0
+    robust = (np.median(dist) > 0) and (np.mean(dist > 0) >= 0.6)
+    usable = (ho["sharpe"] >= bh["sharpe"]) or (
+        ho["total_return"] > 0 and ho["drawdown"] > bh["drawdown"])  # dd less negative
+    ok = profitable and robust and usable
 
-    print("\n" + "=" * 60)
-    print("CHAMPION:", champ.get_expr()[:120])
-    print("=" * 60)
-    print(f"naive full-search Sharpe (optimistic) : {naive:6.3f}")
-    print(f"random-block OOS Sharpe   median      : {np.median(draws):6.3f}")
-    print(f"                          25-75 pct   : {np.percentile(draws,25):6.3f} .. {np.percentile(draws,75):6.3f}")
-    print(f"                          % draws > 0  : {beat*100:5.1f}%")
-    print(f"LOCKED HOLDOUT Sharpe (honest)        : {ho['sharpe']:6.3f}   "
-          f"return {ho['total_return']*100:6.1f}%  maxDD {ho['drawdown']*100:5.1f}%")
-    print(f"  buy & hold on same holdout          : {bh['sharpe']:6.3f}   "
-          f"return {bh['total_return']*100:6.1f}%")
-    print("\nRead: big drop from naive -> holdout = overfitting. A robust")
-    print("strategy keeps a positive median across random blocks AND on the")
-    print("locked holdout, and ideally beats buy & hold there.")
+    print("\n" + "=" * 64)
+    print("CHAMPION:", best_expr[:140])
+    print("=" * 64)
+    print(f"selected robust score={best_score:.3f} (median block Sharpe {best_med:.3f})")
+    print(f"naive full-search Sharpe (optimistic): {naive:6.3f}")
+    print(f"OOS block Sharpe  median={np.median(dist):6.3f}  "
+          f"[25-75: {np.percentile(dist,25):.3f}..{np.percentile(dist,75):.3f}]  "
+          f">0 in {np.mean(dist>0)*100:.0f}%")
+    print(f"LOCKED HOLDOUT : Sharpe {ho['sharpe']:6.3f}  return {ho['total_return']*100:6.1f}%  "
+          f"maxDD {ho['drawdown']*100:5.1f}%")
+    print(f"buy & hold     : Sharpe {bh['sharpe']:6.3f}  return {bh['total_return']*100:6.1f}%  "
+          f"maxDD {bh['drawdown']*100:5.1f}%")
+    print(f"\nprofitable={profitable}  robust={robust}  usable={usable}  ==> "
+          f"{'GOAL MET' if ok else 'not yet'}")
+
+    # ── persist the champion so it is actually usable (not just printed) ───────
+    if ok:
+        import json
+        payload = {
+            "expression": best_expr,
+            "tree": best_tree.to_dict(),
+            "features": sf.columns.tolist(),
+            "position_mode": POSITION_MODE,
+            "seed": SEED,
+            "selected_by": "out-of-sample block-CV on search region (holdout untouched)",
+            "search_region_sharpe": round(naive, 4),
+            "oos_block_sharpe_median": round(float(np.median(dist)), 4),
+            "oos_block_sharpe_pct_positive": round(float(np.mean(dist > 0)), 4),
+            "holdout": {
+                "sharpe": round(ho["sharpe"], 4),
+                "total_return": round(ho["total_return"], 4),
+                "max_drawdown": round(ho["drawdown"], 4),
+            },
+            "buy_hold_holdout": {
+                "sharpe": round(bh["sharpe"], 4),
+                "total_return": round(bh["total_return"], 4),
+                "max_drawdown": round(bh["drawdown"], 4),
+            },
+            "note": ("Long/flat SPY trend-timing overlay. Profitable and robust "
+                     "out-of-sample; its edge is drawdown reduction vs buy & hold, "
+                     "not higher total return in bull markets."),
+        }
+        with open("robust_champion.json", "w") as fh:
+            json.dump(payload, fh, indent=2)
+        print("saved champion -> robust_champion.json")
+    return ok, best_expr, ho, bh, dist
 
 
 if __name__ == "__main__":
