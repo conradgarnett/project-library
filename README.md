@@ -1,69 +1,82 @@
 # Project Library
 
-A portfolio of quantitative-finance projects, all built on **free, key-less
-market data**. Each project lives on its own branch and is mirrored as a folder
-here.
-
-## Overview
+A collection of **quantitative-finance projects** built end-to-end on **free,
+key-less market data** — with a hard emphasis on *honest* backtesting. Every
+strategy is validated walk-forward (no look-ahead), and the results say plainly
+what works and what doesn't.
 
 The projects form one pipeline — **pricing → strategies → allocation → book**:
 
-1. **Delta Terminal · GP Trading Engine** — data terminal and a genetic-programming
-   strategy evolver (research tooling).
-2. **Options Pricing & Greeks** — a full derivatives pricing library.
-3. **Crypto Arbitrage Toolkit · Crypto Funding-Rate Carry** — two *market-neutral*
-   crypto strategies.
-4. **Portfolio & Risk Allocator** — combines return streams into a risk-managed book.
-5. **Multi-Strategy Book** (capstone) — wires the *real* strategy returns into the
-   allocator: build strategies, then allocate across them.
+| Folder | What it is |
+| --- | --- |
+| [`options-pricing/`](options-pricing) | Full derivatives pricing library: Black-Scholes, Monte-Carlo, binomial & Crank-Nicolson PDE, all Greeks (incl. higher-order), exotics, jump-diffusion/Heston, implied-vol surface calibration, and a no-arbitrage scanner. 48 tests. |
+| [`crypto-stat-arb/`](crypto-stat-arb) | Statistical arbitrage: cointegration pair screening, z-score **and ML / neural-net (LSTM)** signals, cross-venue / triangular arbitrage across five free exchanges, and a QuantConnect/LEAN port — with **walk-forward** validation. |
+| [`crypto-funding-carry/`](crypto-funding-carry) | Market-neutral perpetual-futures **funding carry**: long-spot / short-perp, with a **basis-aware** backtest, a portfolio-of-carries, and a 3-year real-data validation. |
+| [`portfolio-allocator/`](portfolio-allocator) | Portfolio construction (mean-variance, risk parity, HRP) + risk engine (VaR/CVaR/stress) + the Markowitz **efficient frontier**, all walk-forward. |
+| [`multi-strategy-book/`](multi-strategy-book) | **Capstone** — wires the real strategy returns into the allocator to form one risk-managed book. |
+| [`GP Trading Engine/`](GP%20Trading%20Engine) | A genetic-programming engine that *evolves* trading strategies as expression trees, with walk-forward and Monte-Carlo robustness checks, overfitting-resistant search (randomized block CV + locked holdout), vol targeting, ensembling, multi-asset search, and a supervised-ML strategy finder. |
 
-**Principles throughout:** free/key-less data; honest **walk-forward** backtesting
-(no look-ahead); market-neutral strategies; and being explicit about what *doesn't*
-work.
+## The thesis
 
-### What I learned (the honest findings)
+Free/key-less data · honest **walk-forward** backtesting · market-neutral
+strategies · and being explicit about what *doesn't* work.
+
+## What the research actually found (the honest part)
 
 - **Arbitrage is efficient.** Cross-exchange and triangular gross edges exist but
-  don't survive taker fees — 0 executable loops after costs.
+  don't survive taker fees — **0 executable loops after costs**.
 - **Model the real hedge.** Funding carry is harvestable, but pricing the actual
-  perp/spot **basis** cuts the idealized Sharpe ~2–7×. The idealized number was a
-  mirage.
+  perp/spot **basis** cuts the idealized Sharpe **~2–7×**. The idealized number
+  was a mirage.
+- **The carry premium is real but compressing.** On 3 years of real data, 11 of
+  12 coins were positive with zero selection — but returns fell from +11.7%
+  (2024) to roughly flat in 2026. It's a *when* strategy, not an *always* one.
 - **In-sample lies.** Stat-arb looks great in-sample and mostly doesn't survive
   **out-of-sample** — walk-forward validation is the only honest judge.
-- **Diversification is the free lunch.** Genuinely uncorrelated strategies combine
-  into a lower-risk book than any of them alone.
+- **There's a ceiling.** Robust search, ensembling, multi-asset search and a
+  supervised-ML finder all land at an out-of-sample Sharpe of roughly **1.0** on
+  free daily data.
+- **Diversification is the free lunch.** Genuinely uncorrelated strategies
+  (funding carry vs stat-arb ≈ 0.07 correlation) combine into a lower-risk book
+  than any of them alone.
 
-## Projects
+## Capstone — Multi-Strategy Book
 
-- **Delta Terminal** — open-source markets/data terminal. Completely made from free APIs.
-  → [`delta-terminal`](https://github.com/conradgarnett/project-library/tree/delta-terminal)
-- **GP Trading Engine** — genetic-programming intraday strategy evolver (Python).
-  → [`gp-trading-engine`](https://github.com/conradgarnett/project-library/tree/gp-trading-engine)
-- **Options Pricing & Greeks** — derivatives pricing toolkit: Black-Scholes, Monte-Carlo, binomial & Crank-Nicolson PDE pricers, all Greeks, exotics, alternative models with smile calibration, and risk/scenario tools (Python).
-  → [`options-pricing-greeks`](https://github.com/conradgarnett/project-library/tree/options-pricing-greeks)
-- **Crypto Arbitrage Toolkit** — market-neutral crypto arbitrage research: cointegration/statistical pairs trading with walk-forward validation, plus cross-venue & triangular arbitrage across five free exchanges (Python).
-  → [`crypto-stat-arb`](https://github.com/conradgarnett/project-library/tree/crypto-stat-arb)
-- **Crypto Funding-Rate Carry** — market-neutral perpetual-futures strategy: harvest exchange funding with a delta-neutral (long spot / short perp) position; backtested on free OKX funding data (Python).
-  → [`crypto-funding-carry`](https://github.com/conradgarnett/project-library/tree/crypto-funding-carry)
-- **Portfolio & Risk Allocator** — portfolio construction (mean-variance, risk parity, HRP) + risk engine (VaR/CVaR/stress) with walk-forward backtesting; allocates across assets or across your own strategies (Python).
-  → [`portfolio-allocator`](https://github.com/conradgarnett/project-library/tree/portfolio-allocator)
-
-## Capstone — Multi-Strategy Book (`multi-strategy-book/`)
-
-The payoff that ties it together: the **real** return streams of the two crypto
-strategies (funding carry + stat-arb) fed into the allocator to form one book.
-Run with `python multi-strategy-book/build_book.py`.
+The **real** return streams of the two crypto strategies (funding carry +
+stat-arb) fed into the allocator to form one book. Run with
+`python multi-strategy-book/build_book.py`.
 
 - **The strategies are genuinely uncorrelated** — funding-carry vs stat-arb ≈ 0.07,
-  and both ≈ 0 / negative to BTC (market-neutral). See
-  `multi-strategy-book/figures/book_correlation.png` — the diversification
-  precondition is real.
+  and both ≈ 0 / negative to BTC (market-neutral).
 - **Risk-based allocation sizes them inversely to risk** — risk parity puts ~97% on
   the low-vol funding carry and ~3% on the volatile stat-arb, more than halving the
-  book's volatility vs the risky sleeve. The allocator does its job on real strategy
-  data.
-- **Honest scope:** the common window is ~65 days (free OKX funding history is only
-  ~3 months deep) and it was a *losing* window for stat-arb and BTC, so the book's
-  **return is negative**. This is a proof of the **architecture and risk
-  management**, not a track record — with longer history and more strategies it is
-  exactly how a systematic multi-strategy book is assembled.
+  book's volatility vs the risky sleeve.
+- **Honest scope:** the common window is ~65 days and it was a *losing* window for
+  stat-arb and BTC, so the book's **return is negative**. This is a proof of the
+  **architecture and risk management**, not a track record.
+
+## Run any of it
+
+Each folder is a self-contained project with its own README, `requirements.txt`,
+and a no-pytest test runner:
+
+```bash
+cd portfolio-allocator
+pip install -r requirements.txt
+python scripts/03_frontier.py       # -> figures/efficient_frontier.png
+python tests/run_all.py             # 17 tests
+```
+
+## Development branches
+
+Some projects were first developed on their own branches; `main` holds the
+latest version of each as a folder:
+[`gp-trading-engine`](https://github.com/conradgarnett/project-library/tree/gp-trading-engine) ·
+[`options-pricing-greeks`](https://github.com/conradgarnett/project-library/tree/options-pricing-greeks) ·
+[`crypto-stat-arb`](https://github.com/conradgarnett/project-library/tree/crypto-stat-arb) ·
+[`crypto-funding-carry`](https://github.com/conradgarnett/project-library/tree/crypto-funding-carry) ·
+[`portfolio-allocator`](https://github.com/conradgarnett/project-library/tree/portfolio-allocator)
+
+## License
+
+MIT — see [LICENSE](LICENSE).

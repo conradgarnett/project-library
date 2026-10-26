@@ -28,6 +28,10 @@ from .statarb.pairs import screen_pairs
 from .statarb.signals import zscore_signal
 from .statarb.backtest import backtest_pair, BacktestResult
 from .statarb.walkforward import walk_forward, WalkForwardResult
+from .statarb.ml import (
+    MLSignal, SpreadNet, GBMSignal, RidgeSignal, walk_forward_ml,
+    spread_features, forward_label,
+)
 
 # --- cross-venue arbitrage ------------------------------------------------- #
 from .crossvenue.exchanges import (
@@ -46,6 +50,8 @@ __all__ = [
     # statarb
     "screen_pairs", "zscore_signal", "backtest_pair", "BacktestResult",
     "walk_forward", "WalkForwardResult",
+    "MLSignal", "SpreadNet", "GBMSignal", "RidgeSignal", "walk_forward_ml",
+    "spread_features", "forward_label",
     # crossvenue
     "daily_close_panel", "live_quote_panel", "USD_EXCHANGES", "TAKER_FEE_BPS",
     "live_arbitrage", "scan_live_arbitrage", "cross_exchange_spread", "dislocation_stats",

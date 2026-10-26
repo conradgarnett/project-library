@@ -16,3 +16,6 @@ quant-mind/
 my-vault/
 earnings_vrp/
 .ipynb_checkpoints/
+
+# Local data caches
+data/

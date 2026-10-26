@@ -8,6 +8,44 @@ This is a *sibling* project to the crypto arbitrage toolkit (statistical /
 cross-venue arbitrage) and the options pricing model — kept on its own branch
 because it's a distinct **strategy**, not arbitrage and not a pricing model.
 
+## Honest validation on 3 years of real data (2026-07)
+
+The strategy was put through the same gauntlet that falsified the sibling
+stat-arb project (`crypto-stat-arb/quantconnect/backtest_local.py`): real data,
+real costs, walk-forward-only decisions. Source: Gate.io (OKX's public funding
+history caps at ~3 months — see `scripts/fetch_funding_data.py`). 12 coins,
+2023-07 -> 2026-07, basis-aware P&L, 15 bps entry / 30 bps switch costs.
+Run it: `python scripts/validate_carry.py`.
+
+| test | ann. return* | Sharpe | maxDD |
+| --- | --- | --- | --- |
+| hold-all equal-weight (**zero selection bias**) | +5.5% | 6.2 | −1.4% |
+| walk-forward top-4 by trailing funding | +5.5% | 4.2 | −0.7% |
+| causal ≥5% funding hurdle (on 43% of the time) | +5.0% | 7.1 | −0.5% |
+
+*Per unit of one leg's notional; a fully-funded spot+margin setup earns
+roughly **half** this on total capital.
+
+**The premium is real** — 11 of 12 coins positive over 3 years with no
+selection at all, positive in 2023, 2024 and 2025. Three honest findings:
+
+1. **It is compressing**: 2024 +11.7% -> 2025 +2.5% -> 2026 YTD −0.7%
+   (hold-all). Funding carry got crowded; on total capital, recent levels
+   trail T-bills. This is a *when* strategy, not an *always* strategy.
+2. **Coin selection adds nothing**: chasing trailing funding (Sharpe 4.2)
+   loses to simply holding all 12 (6.2) — the premium is market-wide, not
+   coin-specific, so selection only adds turnover and concentration.
+3. **The causal hurdle rule is the deployment answer**: next-interval funding
+   is known in advance, so "harvest only when trailing funding annualizes
+   above a hurdle" is causal, not curve-fit. It kept ~all the return at a
+   third of the drawdown and correctly stands aside in 2026. (Hurdles 3% and
+   5% behave near-identically — the rule is not fragile to the threshold.)
+
+**Sharpe 6 needs a health warning.** Carry strategies have smooth P&L until
+they don't: perp-leg liquidation in a crash, exchange/counterparty failure,
+and cross-venue basis blowouts are all OUTSIDE this sample. Size as if the
+true risk were multiples of the measured vol.
+
 ## The idea
 
 A **perpetual future** ("perp") never expires, so a **funding rate** paid every
